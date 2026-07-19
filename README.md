@@ -47,6 +47,10 @@ uv run uvicorn aibot.main:app --reload
 
 - Swagger: <http://127.0.0.1:8000/docs>
 - Healthcheck: <http://127.0.0.1:8000/api/health>
+- Административный кабинет: <http://127.0.0.1:8000/cabinet/>
+- Вход в кабинет: <http://127.0.0.1:8000/cabinet/login>
+
+Кабинет доступен только при `CABINET_ENABLED=true`.
 
 ## Полный контейнерный стек
 
