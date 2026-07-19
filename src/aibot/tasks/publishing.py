@@ -5,10 +5,11 @@ import uuid
 
 from aibot.db.session import AsyncSessionFactory
 from aibot.services.publishing import PublishingService
+from aibot.tasks.base import LoggedTask
 from aibot.tasks.celery_app import celery_app
 
 
-@celery_app.task(name="aibot.tasks.publishing.publish_post")
+@celery_app.task(base=LoggedTask, name="aibot.tasks.publishing.publish_post")
 def publish_post(post_id: str) -> dict[str, object]:
     """Запустить dry-run или реальную публикацию поста."""
 

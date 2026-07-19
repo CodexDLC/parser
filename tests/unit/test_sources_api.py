@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
 
-from aibot.api.deps import get_news_ingestion_service, get_source_service
+from aibot.api.deps import get_source_service, get_task_queue
 from aibot.main import app
 from aibot.models.enums import SourceType
 from aibot.services.exceptions import EntityNotFoundError
@@ -60,32 +60,21 @@ class FakeSourceService:
         return self._source(enabled=False)
 
 
-class FakeNewsIngestionService:
-    """Fake ingestion service для parse endpoint."""
+class FakeTaskQueue:
+    """Зафиксировать постановку parser-задачи без подключения к Redis."""
 
-    async def parse_source(self, source_id: uuid.UUID, *, limit: int = 10) -> dict[str, object]:
-        """Вернуть fake parse summary."""
+    def __init__(self) -> None:
+        self.parse_calls: list[tuple[uuid.UUID, int]] = []
 
-        return {
-            "source_id": source_id,
-            "parsed_count": limit,
-            "saved_count": 2,
-            "duplicate_count": 0,
-            "filtered_out_count": 1,
-            "ready_for_generation_count": 1,
-        }
+    def enqueue_source_parsing(self, source_id: uuid.UUID, *, limit: int) -> str:
+        self.parse_calls.append((source_id, limit))
+        return "parse-task-id"
 
 
 def override_source_service() -> FakeSourceService:
     """Вернуть fake source service."""
 
     return FakeSourceService()
-
-
-def override_news_ingestion_service() -> FakeNewsIngestionService:
-    """Вернуть fake ingestion service."""
-
-    return FakeNewsIngestionService()
 
 
 def test_sources_crud_contract() -> None:
@@ -139,21 +128,35 @@ def test_get_source_returns_404_for_missing_source() -> None:
 
 
 def test_parse_source_contract() -> None:
-    """Sources API имеет ручной parse endpoint."""
+    """Parse endpoint валидирует source и ставит Celery-задачу."""
 
-    app.dependency_overrides[get_news_ingestion_service] = override_news_ingestion_service
+    task_queue = FakeTaskQueue()
+    app.dependency_overrides[get_source_service] = override_source_service
+    app.dependency_overrides[get_task_queue] = lambda: task_queue
     client = TestClient(app)
 
     try:
         response = client.post(f"/api/sources/{FakeSourceService.source_id}/parse?limit=2")
-        assert response.status_code == 200
-        assert response.json() == {
-            "source_id": str(FakeSourceService.source_id),
-            "parsed_count": 2,
-            "saved_count": 2,
-            "duplicate_count": 0,
-            "filtered_out_count": 1,
-            "ready_for_generation_count": 1,
-        }
+        assert response.status_code == 202
+        assert response.json() == {"task_id": "parse-task-id", "status": "queued"}
+        assert task_queue.parse_calls == [(FakeSourceService.source_id, 2)]
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_parse_source_does_not_queue_missing_source() -> None:
+    """Отсутствующий source по-прежнему возвращает 404 до постановки задачи."""
+
+    task_queue = FakeTaskQueue()
+    app.dependency_overrides[get_source_service] = override_source_service
+    app.dependency_overrides[get_task_queue] = lambda: task_queue
+    client = TestClient(app)
+
+    try:
+        response = client.post(
+            "/api/sources/22222222-2222-2222-2222-222222222222/parse"
+        )
+        assert response.status_code == 404
+        assert task_queue.parse_calls == []
     finally:
         app.dependency_overrides.clear()

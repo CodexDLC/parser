@@ -166,14 +166,44 @@ def test_celery_retry_settings_are_configured() -> None:
 
     assert celery_app.conf.task_publish_retry is True
     assert celery_app.conf.task_publish_retry_policy["max_retries"] == 3
+    assert parse_source.max_retries == 3
     assert generate_text.max_retries == 3
     assert generate_post.max_retries == 3
 
 
-def test_generation_task_run_uses_fake_ai_without_external_keys() -> None:
-    """Generation task can run locally without Redis/OpenAI."""
+def test_beat_schedules_full_pipeline_with_runtime_limits() -> None:
+    """Beat запускает полный pipeline вместо отдельного parsing batch."""
 
+    schedule = celery_app.conf.beat_schedule
+
+    assert set(schedule) == {"run-full-pipeline-every-30-minutes"}
+    entry = schedule["run-full-pipeline-every-30-minutes"]
+    assert entry["task"] == run_pipeline.name
+    assert entry["schedule"] == 30 * 60
+    assert entry["kwargs"] == {
+        "parse_limit": 10,
+        "generation_limit": 10,
+        "publishing_limit": 10,
+    }
+    assert entry["task"] != parse_enabled_sources.name
+
+
+def test_generation_task_contract_uses_injected_ai(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Generation task возвращает production-контракт без fake_mode."""
+
+    class FakeTaskGenerationService:
+        def __init__(self, _: object) -> None:
+            pass
+
+        async def generate_manual_post(self, text: str) -> str:
+            return f"Generated: {text}"
+
+    monkeypatch.setattr(
+        "aibot.tasks.generation.PostGenerationService",
+        FakeTaskGenerationService,
+    )
     result = generate_text.run("Python получил обновление")
 
-    assert result["fake_mode"] is True
-    assert "Python получил обновление" in result["generated_text"]
+    assert result == {"generated_text": "Generated: Python получил обновление"}

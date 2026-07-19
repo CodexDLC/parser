@@ -5,14 +5,12 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, status
 
-from aibot.api.deps import NewsIngestionServiceDep, SourceServiceDep
-from aibot.api.schemas.source import SourceCreate, SourceParseResponse, SourceRead, SourceUpdate
+from aibot.api.deps import SourceServiceDep, TaskQueueDep
+from aibot.api.schemas.source import SourceCreate, SourceRead, SourceUpdate
+from aibot.api.schemas.task import TaskQueuedResponse
 from aibot.models.enums import SourceType
-from aibot.services.exceptions import (
-    EntityAlreadyExistsError,
-    EntityNotFoundError,
-    UnsupportedSourceTypeError,
-)
+from aibot.models.source import Source
+from aibot.services.exceptions import EntityAlreadyExistsError, EntityNotFoundError
 
 router = APIRouter(prefix="/sources", tags=["sources"])
 
@@ -27,7 +25,7 @@ async def list_sources(
     type: SourceType | None = None,  # noqa: A002
     limit: LimitQuery = 100,
     offset: OffsetQuery = 0,
-) -> list[SourceRead]:
+) -> list[Source]:
     """Вернуть список источников новостей."""
 
     return await service.list_sources(
@@ -39,7 +37,7 @@ async def list_sources(
 
 
 @router.post("/", response_model=SourceRead, status_code=status.HTTP_201_CREATED)
-async def create_source(payload: SourceCreate, service: SourceServiceDep) -> SourceRead:
+async def create_source(payload: SourceCreate, service: SourceServiceDep) -> Source:
     """Создать источник новостей."""
 
     try:
@@ -54,7 +52,7 @@ async def create_source(payload: SourceCreate, service: SourceServiceDep) -> Sou
 
 
 @router.get("/{source_id}", response_model=SourceRead)
-async def get_source(source_id: uuid.UUID, service: SourceServiceDep) -> SourceRead:
+async def get_source(source_id: uuid.UUID, service: SourceServiceDep) -> Source:
     """Вернуть один источник новостей."""
 
     try:
@@ -68,7 +66,7 @@ async def update_source(
     source_id: uuid.UUID,
     payload: SourceUpdate,
     service: SourceServiceDep,
-) -> SourceRead:
+) -> Source:
     """Частично обновить источник новостей."""
 
     try:
@@ -86,7 +84,7 @@ async def update_source(
 
 
 @router.delete("/{source_id}", response_model=SourceRead)
-async def disable_source(source_id: uuid.UUID, service: SourceServiceDep) -> SourceRead:
+async def disable_source(source_id: uuid.UUID, service: SourceServiceDep) -> Source:
     """Мягко удалить источник через enabled=false."""
 
     try:
@@ -95,17 +93,22 @@ async def disable_source(source_id: uuid.UUID, service: SourceServiceDep) -> Sou
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
 
-@router.post("/{source_id}/parse", response_model=SourceParseResponse)
+@router.post(
+    "/{source_id}/parse",
+    response_model=TaskQueuedResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
 async def parse_source(
     source_id: uuid.UUID,
-    service: NewsIngestionServiceDep,
+    source_service: SourceServiceDep,
+    task_queue: TaskQueueDep,
     limit: LimitQuery = 10,
-) -> SourceParseResponse:
-    """Ручно распарсить источник и сохранить новости."""
+) -> TaskQueuedResponse:
+    """Проверить source и поставить его парсинг в Celery."""
 
     try:
-        return await service.parse_source(source_id, limit=limit)
+        await source_service.get_source(source_id)
     except EntityNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    except UnsupportedSourceTypeError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    task_id = task_queue.enqueue_source_parsing(source_id, limit=limit)
+    return TaskQueuedResponse(task_id=task_id)

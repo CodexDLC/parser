@@ -1,6 +1,8 @@
 """Тесты SQLAlchemy metadata первого прототипа."""
 
-from sqlalchemy import UniqueConstraint
+from typing import cast
+
+from sqlalchemy import Table, UniqueConstraint
 
 from aibot.db.base import Base
 from aibot.models.enums import ErrorScope, NewsStatus, PostStatus, SourceType
@@ -33,9 +35,10 @@ def test_metadata_contains_project_tables() -> None:
 def test_source_has_unique_type_url_constraint() -> None:
     """Source защищен от дублей по паре type/url."""
 
+    source_table = cast(Table, Source.__table__)
     constraints = {
         constraint.name
-        for constraint in Source.__table__.constraints
+        for constraint in source_table.constraints
         if isinstance(constraint, UniqueConstraint)
     }
 
@@ -45,13 +48,15 @@ def test_source_has_unique_type_url_constraint() -> None:
 def test_keyword_has_lowercase_unique_index() -> None:
     """Keyword имеет уникальный индекс без учета регистра."""
 
-    assert "uq_keywords_word_lower" in {index.name for index in Keyword.__table__.indexes}
+    keyword_table = cast(Table, Keyword.__table__)
+    assert "uq_keywords_word_lower" in {index.name for index in keyword_table.indexes}
 
 
 def test_post_has_partial_unique_published_index() -> None:
     """Post ограничивает один опубликованный пост на одну новость."""
 
-    assert "uq_posts_one_published_per_news" in {index.name for index in Post.__table__.indexes}
+    post_table = cast(Table, Post.__table__)
+    assert "uq_posts_one_published_per_news" in {index.name for index in post_table.indexes}
 
 
 def test_enum_values_match_documented_contract() -> None:

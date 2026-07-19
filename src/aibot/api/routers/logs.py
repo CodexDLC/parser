@@ -7,6 +7,7 @@ from fastapi import APIRouter, Query
 from aibot.api.deps import ErrorLogServiceDep
 from aibot.api.schemas.error_log import ErrorLogRead
 from aibot.models.enums import ErrorScope
+from aibot.models.error_log import ErrorLog
 
 router = APIRouter(prefix="/logs", tags=["logs"])
 
@@ -20,7 +21,7 @@ async def list_logs(
     scope: ErrorScope | None = None,
     limit: LimitQuery = 100,
     offset: OffsetQuery = 0,
-) -> list[ErrorLogRead]:
+) -> list[ErrorLog]:
     """Вернуть последние ошибки приложения."""
 
     return await service.list_logs(scope=scope, limit=limit, offset=offset)

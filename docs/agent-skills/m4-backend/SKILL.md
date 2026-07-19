@@ -45,7 +45,7 @@ Before backend changes, read:
 
 - Read runtime settings from environment variables.
 - Commit `.env.example`, never real `.env` secrets.
-- Add safe dry-run or fake modes for AI and Telegram integrations.
+- Keep Telegram dry-run, but use injected test doubles instead of an AI runtime fake mode.
 
 ## Implementation Order
 

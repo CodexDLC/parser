@@ -38,14 +38,3 @@ class SourceRead(SourceBase):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
-
-
-class SourceParseResponse(BaseModel):
-    """Ответ ручного парсинга источника."""
-
-    source_id: uuid.UUID
-    parsed_count: int = Field(description="Сколько новостей вернул парсер.")
-    saved_count: int = Field(description="Сколько новостей сохранено.")
-    duplicate_count: int = Field(description="Сколько новостей пропущено как дубли.")
-    filtered_out_count: int = Field(description="Сколько новостей не прошло фильтры.")
-    ready_for_generation_count: int = Field(description="Сколько новостей готово к генерации.")

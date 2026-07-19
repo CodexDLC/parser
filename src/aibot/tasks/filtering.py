@@ -5,10 +5,11 @@ import uuid
 
 from aibot.db.session import AsyncSessionFactory
 from aibot.services.news_filtering import SavedNewsFilteringService
+from aibot.tasks.base import LoggedTask
 from aibot.tasks.celery_app import celery_app
 
 
-@celery_app.task(name="aibot.tasks.filtering.filter_news")
+@celery_app.task(base=LoggedTask, name="aibot.tasks.filtering.filter_news")
 def filter_news(news_id: str) -> dict[str, object]:
     """Отфильтровать сохраненную новость по текущим ключевым словам."""
 
@@ -25,4 +26,5 @@ async def _filter_news(news_id: uuid.UUID) -> dict[str, object]:
             "status": result.status.value,
             "reason": result.reason,
             "matched_keywords": result.matched_keywords,
+            "detected_language": result.detected_language,
         }

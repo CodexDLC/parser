@@ -3,7 +3,7 @@
 from aibot.api.schemas.keyword import KeywordCreate, KeywordRead, KeywordUpdate
 from aibot.api.schemas.news_item import NewsItemRead
 from aibot.api.schemas.post import PostRead
-from aibot.api.schemas.source import SourceCreate, SourceParseResponse, SourceRead, SourceUpdate
+from aibot.api.schemas.source import SourceCreate, SourceRead, SourceUpdate
 
 __all__ = [
     "KeywordCreate",
@@ -12,7 +12,6 @@ __all__ = [
     "NewsItemRead",
     "PostRead",
     "SourceCreate",
-    "SourceParseResponse",
     "SourceRead",
     "SourceUpdate",
 ]

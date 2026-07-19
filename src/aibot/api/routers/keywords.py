@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, Query, Response, status
 
 from aibot.api.deps import KeywordServiceDep
 from aibot.api.schemas.keyword import KeywordCreate, KeywordRead, KeywordUpdate
+from aibot.models.keyword import Keyword
 from aibot.services.exceptions import EntityAlreadyExistsError, EntityNotFoundError
 
 router = APIRouter(prefix="/keywords", tags=["keywords"])
@@ -21,14 +22,14 @@ async def list_keywords(
     enabled: bool | None = None,
     limit: LimitQuery = 100,
     offset: OffsetQuery = 0,
-) -> list[KeywordRead]:
+) -> list[Keyword]:
     """Вернуть список ключевых слов."""
 
     return await service.list_keywords(enabled=enabled, limit=limit, offset=offset)
 
 
 @router.post("/", response_model=KeywordRead, status_code=status.HTTP_201_CREATED)
-async def create_keyword(payload: KeywordCreate, service: KeywordServiceDep) -> KeywordRead:
+async def create_keyword(payload: KeywordCreate, service: KeywordServiceDep) -> Keyword:
     """Создать ключевое слово."""
 
     try:
@@ -42,7 +43,7 @@ async def update_keyword(
     keyword_id: uuid.UUID,
     payload: KeywordUpdate,
     service: KeywordServiceDep,
-) -> KeywordRead:
+) -> Keyword:
     """Частично обновить ключевое слово."""
 
     try:

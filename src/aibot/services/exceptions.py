@@ -21,5 +21,9 @@ class InvalidNewsStateError(Exception):
     """Новость находится в состоянии, которое не позволяет выполнить операцию."""
 
 
+class ConcurrentGenerationError(Exception):
+    """Другой worker уже генерирует пост для этой новости."""
+
+
 class PublishingFailedError(Exception):
     """Публикация поста завершилась ошибкой внешнего сервиса."""

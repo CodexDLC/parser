@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from aibot.config import Settings, get_settings
 from aibot.models.enums import NewsStatus
 from aibot.models.news_item import NewsItem
 from aibot.parsers.base import ParsedNewsItem
@@ -22,6 +23,7 @@ class NewsFilteringResult:
     status: NewsStatus
     reason: str
     matched_keywords: list[str]
+    detected_language: str | None
 
 
 class SavedNewsFilteringService:
@@ -33,12 +35,16 @@ class SavedNewsFilteringService:
         *,
         news_repository: NewsRepository | None = None,
         keyword_repository: KeywordRepository | None = None,
+        settings: Settings | None = None,
         keyword_filter_service: KeywordFilterService | None = None,
     ) -> None:
+        runtime_settings = settings or get_settings()
         self.session = session
         self.news_repository = news_repository or NewsRepository(session)
         self.keyword_repository = keyword_repository or KeywordRepository(session)
-        self.keyword_filter_service = keyword_filter_service or KeywordFilterService()
+        self.keyword_filter_service = keyword_filter_service or KeywordFilterService(
+            allowed_languages=runtime_settings.allowed_news_languages
+        )
 
     async def filter_news(self, news_id: uuid.UUID) -> NewsFilteringResult:
         """Проверить сохраненную новость и обновить ее статус."""
@@ -65,6 +71,7 @@ class SavedNewsFilteringService:
             status=news_item.status,
             reason=decision.reason,
             matched_keywords=decision.matched_keywords,
+            detected_language=decision.detected_language,
         )
 
     def _to_parsed_news_item(self, news_item: NewsItem) -> ParsedNewsItem:

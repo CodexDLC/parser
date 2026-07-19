@@ -35,9 +35,14 @@ celery_app.conf.update(
         "interval_max": 30,
     },
     beat_schedule={
-        "parse-enabled-sources-every-30-minutes": {
-            "task": "aibot.tasks.parsing.parse_enabled_sources",
-            "schedule": 30 * 60,
+        "run-full-pipeline-every-30-minutes": {
+            "task": "aibot.tasks.pipeline.run_pipeline",
+            "schedule": settings.pipeline_interval_seconds,
+            "kwargs": {
+                "parse_limit": settings.pipeline_parse_limit,
+                "generation_limit": settings.pipeline_generation_limit,
+                "publishing_limit": settings.pipeline_publishing_limit,
+            },
         }
     },
 )

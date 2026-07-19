@@ -237,6 +237,37 @@ wheels = [
 ]
 
 [[package]]
+name = "codex-ai"
+version = "0.2.5"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "codex-core" },
+    { name = "pydantic" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/75/cc/a3219eff366ee4c4140f7bb9a297be4820b50aa0f6b25ebe4ffb25bd3235/codex_ai-0.2.5.tar.gz", hash = "sha256:541b6f2d62209353033e7d316ad55d70fb08ac9cd8336a173dfe7ca54a0c0b94", size = 136416, upload-time = "2026-07-19T08:46:18.815Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/09/ef/221dbc71387aba5994b2fffb39fdcfa5f78017779e3a549763cfcf75c691/codex_ai-0.2.5-py3-none-any.whl", hash = "sha256:10f06daf6d80e6a6ea25bfb4108919e8200e09598b7d984b61ab39c8a2475293", size = 21548, upload-time = "2026-07-19T08:46:17.484Z" },
+]
+
+[package.optional-dependencies]
+openai = [
+    { name = "openai" },
+]
+
+[[package]]
+name = "codex-core"
+version = "0.4.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pydantic" },
+    { name = "pydantic-settings" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/9d/4b/f052df0934e1086198e4137888cf18ef3266c39f07293a2eed8845650784/codex_core-0.4.0.tar.gz", hash = "sha256:656acbf400fbf00c59ff3707e924043b12a99e2e7de66f4abea155831412b349", size = 125494, upload-time = "2026-05-20T20:46:14.494Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4c/f2/fdb6a1cafa42ff6b3c8a7d64eda5a6123a03af200a97dc1237bdd705d639/codex_core-0.4.0-py3-none-any.whl", hash = "sha256:f4527c463c1017e946ad1834493a14d3ec54fed56c66eb94d67be34724613f82", size = 32738, upload-time = "2026-05-20T20:46:12.511Z" },
+]
+
+[[package]]
 name = "colorama"
 version = "0.4.6"
 source = { registry = "https://pypi.org/simple" }
@@ -546,12 +577,12 @@ dependencies = [
     { name = "asyncpg" },
     { name = "beautifulsoup4" },
     { name = "celery", extra = ["redis"] },
+    { name = "codex-ai", extra = ["openai"] },
     { name = "fastapi" },
     { name = "feedparser" },
     { name = "httpx" },
     { name = "langdetect" },
     { name = "lxml" },
-    { name = "openai" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pydantic" },
     { name = "pydantic-settings" },
@@ -586,13 +617,13 @@ requires-dist = [
     { name = "asyncpg", specifier = ">=0.29" },
     { name = "beautifulsoup4", specifier = ">=4.12" },
     { name = "celery", extras = ["redis"], specifier = ">=5.4" },
+    { name = "codex-ai", extras = ["openai"], specifier = "==0.2.5" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "feedparser", specifier = ">=6.0" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "langdetect", specifier = ">=1.0" },
     { name = "lxml", specifier = ">=5.2" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.11" },
-    { name = "openai", specifier = ">=1.40" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=3.8" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },
     { name = "pydantic", specifier = ">=2.8" },

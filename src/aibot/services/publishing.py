@@ -51,10 +51,7 @@ class PublishingService:
     async def publish_post(self, post_id: uuid.UUID) -> PublishResult:
         """Опубликовать пост или выполнить dry-run публикацию."""
 
-        post = await self.repository.get(post_id)
-        if post is None:
-            raise EntityNotFoundError("Post not found")
-        self._ensure_publishable(post)
+        post = await self.get_publishable_post(post_id)
 
         post.status = PostStatus.PUBLISHING
         await self.session.flush()
@@ -77,6 +74,15 @@ class PublishingService:
             telegram_message_id=message_id,
             dry_run=self.settings.telegram_dry_run,
         )
+
+    async def get_publishable_post(self, post_id: uuid.UUID) -> Post:
+        """Быстро проверить существование и статус поста до постановки задачи."""
+
+        post = await self.repository.get(post_id)
+        if post is None:
+            raise EntityNotFoundError("Post not found")
+        self._ensure_publishable(post)
+        return post
 
     def _ensure_publishable(self, post: Post) -> None:
         """Проверить, что пост можно публиковать."""

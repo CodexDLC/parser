@@ -1,4 +1,4 @@
-"""Локальный демонстрационный pipeline без базы, сети и реальных ключей."""
+"""Локальный демонстрационный pipeline без базы с реальной AI-генерацией."""
 
 import argparse
 import asyncio
@@ -7,6 +7,7 @@ from dataclasses import asdict, dataclass
 from typing import Any
 
 from aibot.config import Settings, get_settings
+from aibot.integrations.ai_client import AIClient
 from aibot.integrations.telegram_client import TelegramClient
 from aibot.parsers.sites import DemoSiteParser
 from aibot.services.deduplication import DeduplicationService, build_content_hash
@@ -39,7 +40,6 @@ class DemoPipelineResult:
 
     source_name: str
     source_url: str
-    fake_mode: bool
     telegram_dry_run: bool
     parsed_count: int
     duplicate_count: int
@@ -54,6 +54,7 @@ async def run_demo_pipeline(
     *,
     limit: int = 10,
     settings: Settings | None = None,
+    ai_client: AIClient | None = None,
 ) -> DemoPipelineResult:
     """Прогнать локальный сценарий: parse -> dedupe -> filter -> generate -> publish."""
 
@@ -64,8 +65,13 @@ async def run_demo_pipeline(
 
     parser = DemoSiteParser()
     deduplication_service = DeduplicationService()
-    filter_service = KeywordFilterService()
-    generation_service = PostGenerationService(runtime_settings)
+    filter_service = KeywordFilterService(
+        allowed_languages=runtime_settings.allowed_news_languages
+    )
+    generation_service = PostGenerationService(
+        settings=runtime_settings,
+        ai_client=ai_client,
+    )
     telegram_client = TelegramClient(runtime_settings)
 
     parsed_items = await parser.parse(source_name=source_name, url=source_url, limit=limit)
@@ -112,7 +118,6 @@ async def run_demo_pipeline(
     return DemoPipelineResult(
         source_name=source_name,
         source_url=source_url,
-        fake_mode=runtime_settings.ai_fake_mode,
         telegram_dry_run=runtime_settings.telegram_dry_run,
         parsed_count=len(parsed_items),
         duplicate_count=duplicate_count,

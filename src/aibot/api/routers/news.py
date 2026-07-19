@@ -5,16 +5,11 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, status
 
-from aibot.api.deps import NewsServiceDep, PostGenerationServiceDep
+from aibot.api.deps import NewsServiceDep, PostGenerationServiceDep, TaskQueueDep
 from aibot.api.schemas.news_item import NewsItemRead
-from aibot.api.schemas.post import PostRead
-from aibot.integrations.ai_client import (
-    AIClientAuthenticationError,
-    AIClientInvalidResponseError,
-    AIClientRateLimitError,
-    AIClientTimeoutError,
-)
+from aibot.api.schemas.task import TaskQueuedResponse
 from aibot.models.enums import NewsStatus
+from aibot.models.news_item import NewsItem
 from aibot.services.exceptions import EntityNotFoundError, InvalidNewsStateError
 
 router = APIRouter(prefix="/news", tags=["news"])
@@ -30,14 +25,14 @@ async def list_news(
     status: NewsStatus | None = None,
     limit: LimitQuery = 100,
     offset: OffsetQuery = 0,
-) -> list[NewsItemRead]:
+) -> list[NewsItem]:
     """Вернуть список новостей."""
 
     return await service.list_news(source_id=source_id, status=status, limit=limit, offset=offset)
 
 
 @router.get("/{news_id}", response_model=NewsItemRead)
-async def get_news_item(news_id: uuid.UUID, service: NewsServiceDep) -> NewsItemRead:
+async def get_news_item(news_id: uuid.UUID, service: NewsServiceDep) -> NewsItem:
     """Вернуть одну новость."""
 
     try:
@@ -46,22 +41,23 @@ async def get_news_item(news_id: uuid.UUID, service: NewsServiceDep) -> NewsItem
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
 
-@router.post("/{news_id}/generate", response_model=PostRead)
+@router.post(
+    "/{news_id}/generate",
+    response_model=TaskQueuedResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
 async def generate_news_post(
     news_id: uuid.UUID,
     service: PostGenerationServiceDep,
-) -> PostRead:
-    """Сгенерировать и сохранить Telegram-пост для новости."""
+    task_queue: TaskQueueDep,
+) -> TaskQueuedResponse:
+    """Проверить news и поставить генерацию поста в Celery."""
 
     try:
-        return await service.generate_post_from_news(news_id)
+        await service.get_generation_candidate(news_id)
     except EntityNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except InvalidNewsStateError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    except AIClientRateLimitError as exc:
-        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
-    except AIClientTimeoutError as exc:
-        raise HTTPException(status_code=status.HTTP_504_GATEWAY_TIMEOUT, detail=str(exc)) from exc
-    except (AIClientAuthenticationError, AIClientInvalidResponseError) as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    task_id = task_queue.enqueue_news_generation(news_id)
+    return TaskQueuedResponse(task_id=task_id)

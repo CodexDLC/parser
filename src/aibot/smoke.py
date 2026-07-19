@@ -8,7 +8,10 @@ from typing import Any
 
 from aibot.db.base import Base
 from aibot.db.session import AsyncSessionFactory, engine
+from aibot.integrations.ai_client import AIClient
 from aibot.models.enums import NewsStatus, PostStatus, SourceType
+from aibot.parsers.base import NewsParser
+from aibot.parsers.sites import DemoSiteParser
 from aibot.repositories.news_repository import NewsRepository
 from aibot.repositories.post_repository import PostRepository
 from aibot.services.exceptions import EntityAlreadyExistsError
@@ -33,7 +36,6 @@ class SmokeResult:
     generated_post_status: str
     published_post_status: str
     telegram_message_id: str
-    fake_mode: bool
     telegram_dry_run: bool
 
 
@@ -45,7 +47,12 @@ async def reset_database() -> None:
         await connection.run_sync(Base.metadata.create_all)
 
 
-async def run_smoke_scenario(*, reset: bool = False) -> SmokeResult:
+async def run_smoke_scenario(
+    *,
+    reset: bool = False,
+    ai_client: AIClient | None = None,
+    site_parser: NewsParser | None = None,
+) -> SmokeResult:
     """Run source -> parse -> generate -> publish against configured database."""
 
     if reset:
@@ -55,7 +62,10 @@ async def run_smoke_scenario(*, reset: bool = False) -> SmokeResult:
         source = await _ensure_source(session)
         await _ensure_keyword(session)
 
-        parse_result = await NewsIngestionService(session).parse_source(source.id, limit=2)
+        parse_result = await NewsIngestionService(
+            session,
+            site_parser=site_parser,
+        ).parse_source(source.id, limit=2)
         ready_news = await NewsRepository(session).list_by_status(
             NewsStatus.READY_FOR_GENERATION,
             limit=1,
@@ -63,9 +73,10 @@ async def run_smoke_scenario(*, reset: bool = False) -> SmokeResult:
         if not ready_news:
             raise RuntimeError("Smoke scenario did not produce ready_for_generation news")
 
-        generated_post = await PostGenerationService(session).generate_post_from_news(
-            ready_news[0].id
-        )
+        generated_post = await PostGenerationService(
+            session,
+            ai_client=ai_client,
+        ).generate_post_from_news(ready_news[0].id)
         publish_result = await PublishingService(session).publish_post(generated_post.id)
         published_post = await PostRepository(session).get(generated_post.id)
         if published_post is None:
@@ -82,7 +93,6 @@ async def run_smoke_scenario(*, reset: bool = False) -> SmokeResult:
             generated_post_status=PostStatus.GENERATED.value,
             published_post_status=published_post.status.value,
             telegram_message_id=publish_result.telegram_message_id,
-            fake_mode=PostGenerationService().settings.ai_fake_mode,
             telegram_dry_run=publish_result.dry_run,
         )
 
@@ -145,7 +155,12 @@ def main() -> None:
     """Run smoke scenario from command line."""
 
     args = build_arg_parser().parse_args()
-    result = asyncio.run(run_smoke_scenario(reset=args.reset))
+    result = asyncio.run(
+        run_smoke_scenario(
+            reset=args.reset,
+            site_parser=DemoSiteParser(),
+        )
+    )
     print(json.dumps(result_to_dict(result), ensure_ascii=False, indent=2))
 
 

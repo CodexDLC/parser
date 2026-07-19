@@ -5,13 +5,14 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, status
 
-from aibot.api.deps import PostServiceDep, PublishingServiceDep
+from aibot.api.deps import PostServiceDep, PublishingServiceDep, TaskQueueDep
 from aibot.api.schemas.post import PostRead
+from aibot.api.schemas.task import TaskQueuedResponse
 from aibot.models.enums import PostStatus
+from aibot.models.post import Post
 from aibot.services.exceptions import (
     EntityNotFoundError,
     InvalidPostStateError,
-    PublishingFailedError,
 )
 
 router = APIRouter(prefix="/posts", tags=["posts"])
@@ -26,14 +27,14 @@ async def list_posts(
     status: PostStatus | None = None,
     limit: LimitQuery = 100,
     offset: OffsetQuery = 0,
-) -> list[PostRead]:
+) -> list[Post]:
     """Вернуть историю постов."""
 
     return await service.list_posts(status=status, limit=limit, offset=offset)
 
 
 @router.get("/{post_id}", response_model=PostRead)
-async def get_post(post_id: uuid.UUID, service: PostServiceDep) -> PostRead:
+async def get_post(post_id: uuid.UUID, service: PostServiceDep) -> Post:
     """Вернуть один пост."""
 
     try:
@@ -42,20 +43,23 @@ async def get_post(post_id: uuid.UUID, service: PostServiceDep) -> PostRead:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
 
-@router.post("/{post_id}/publish", response_model=PostRead)
+@router.post(
+    "/{post_id}/publish",
+    response_model=TaskQueuedResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
 async def publish_post(
     post_id: uuid.UUID,
-    post_service: PostServiceDep,
     publishing_service: PublishingServiceDep,
-) -> PostRead:
-    """Опубликовать пост или выполнить Telegram dry-run публикацию."""
+    task_queue: TaskQueueDep,
+) -> TaskQueuedResponse:
+    """Проверить post и поставить публикацию в Celery."""
 
     try:
-        await publishing_service.publish_post(post_id)
-        return await post_service.get_post(post_id)
+        await publishing_service.get_publishable_post(post_id)
     except EntityNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except InvalidPostStateError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    except PublishingFailedError as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    task_id = task_queue.enqueue_post_publication(post_id)
+    return TaskQueuedResponse(task_id=task_id)

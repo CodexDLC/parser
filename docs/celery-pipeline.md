@@ -26,16 +26,35 @@ Celery отвечает за:
 Регулярная задача:
 
 ```text
-parse-enabled-sources: every 30 minutes
+run-full-pipeline: every 30 minutes
 ```
 
-Она запускает парсинг всех активных источников.
+Она запускает полный проход:
+
+```text
+enabled sources -> parse/filter/save -> generate ready news -> publish generated posts
+```
+
+Интервал и лимиты одного прохода задаются через:
+
+```text
+PIPELINE_INTERVAL_SECONDS=1800
+PIPELINE_PARSE_LIMIT=10
+PIPELINE_GENERATION_LIMIT=10
+PIPELINE_PUBLISHING_LIMIT=10
+```
 
 ## Основные задачи
 
 ### `parse_enabled_sources`
 
-Получает все `Source(enabled=true)` и ставит отдельную задачу на каждый источник.
+Получает все `Source(enabled=true)` и обрабатывает их независимо в batch-сервисе.
+Сбой одного источника не останавливает остальные. Результат каждой обработки содержит
+`status=success` или `status=failed`; для ошибки наружу возвращается только имя типа,
+а полная безопасная запись хранится в `ErrorLog`.
+
+Ручной endpoint ставит отдельную `parse_source`-задачу. Она повторяется с backoff
+до трёх раз только для `HttpTemporaryError`; постоянные HTTP/feed ошибки не retry-ятся.
 
 ### `parse_source(source_id)`
 
@@ -96,7 +115,29 @@ parse_enabled_sources
         -> publish_post
 ```
 
-Для MVP pipeline можно запускать частями: сначала ручной парсинг, потом ручная генерация, потом публикация. Автоматическую цепочку включить после проверки каждого шага.
+Beat вызывает `run_pipeline`, который последовательно выполняет все стадии в одном
+worker task. Ошибка одного parser-источника уже записана в `ErrorLog` и не останавливает
+остальные источники или последующие generation/publish стадии. Результат запуска
+содержит количество успешных и неуспешных источников.
+
+AI или Telegram ошибка завершает текущий pipeline task, но сохраняется через
+integration-specific ErrorLog и общий Celery failure hook.
+
+## Ручные API-запуски
+
+FastAPI не вызывает parser, AI или Telegram напрямую. Ручные endpoints возвращают
+`202 Accepted` и единый JSON:
+
+```json
+{
+  "task_id": "celery-task-id",
+  "status": "queued"
+}
+```
+
+Celery adapter сериализует UUID в строки. Перед постановкой entity-based задач API
+выполняет быструю проверку существования и допустимого статуса сущности, а worker
+повторяет доменную проверку перед фактической операцией.
 
 ## Повторные попытки
 
@@ -107,6 +148,9 @@ parse_enabled_sources
 - Telegram temporary errors: 3 попытки;
 - validation/data errors: не повторять.
 
+HTTP-клиент и ingestion не выполняют внутренние retries. Они сохраняют тип временной
+ошибки; retry/backoff остаётся ответственностью Celery-задачи.
+
 ## Идемпотентность
 
 Задачи должны быть безопасны при повторном запуске:
@@ -114,6 +158,21 @@ parse_enabled_sources
 - `parse_source` не создает дубли благодаря `url` и `content_hash`;
 - `generate_post` не создает второй активный пост без явного запроса на регенерацию;
 - `publish_post` не публикует пост, если статус уже `published`.
+
+### Конкурентная генерация
+
+`generate_post(news_id)` захватывает строку `NewsItem` через PostgreSQL
+`SELECT ... FOR UPDATE SKIP LOCKED` до обращения к AI и удерживает lock до
+commit/rollback. Если строка уже занята другим worker:
+
+- второй worker получает `ConcurrentGenerationError`;
+- AI повторно не вызывается;
+- второй `Post` не создаётся;
+- lock автоматически освобождается PostgreSQL при завершении транзакции или падении
+  worker-а.
+
+API preflight остаётся неблокирующим. Авторитетная проверка конкурентности выполняется
+в worker непосредственно перед AI-вызовом.
 
 ## Наблюдаемость
 
@@ -126,3 +185,12 @@ parse_enabled_sources
 
 Для учебного проекта достаточно стандартного `logging` и таблицы `ErrorLog`.
 
+Все project tasks используют общий `LoggedTask`. После окончательного failure, уже
+после исчерпания встроенных retries, он записывает:
+
+- `scope="celery"`;
+- внутреннее имя task;
+- только имя класса исключения;
+- `source_id`, `news_id` или `post_id`, если ID присутствует в аргументах task.
+
+Raw traceback, exception message, API keys и session paths в `ErrorLog` не попадают.

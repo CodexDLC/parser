@@ -8,9 +8,10 @@ from aibot.models.enums import NewsStatus, PostStatus
 from aibot.repositories.news_repository import NewsRepository
 from aibot.repositories.post_repository import PostRepository
 from aibot.repositories.source_repository import SourceRepository
-from aibot.services.news_ingestion import NewsIngestionService, SourceParseResult
+from aibot.services.news_ingestion import NewsIngestionService
 from aibot.services.post_generation import PostGenerationService
 from aibot.services.publishing import PublishingService, PublishResult
+from aibot.services.source_batch_parsing import SourceBatchParsingService
 
 
 @dataclass(frozen=True)
@@ -18,6 +19,7 @@ class PipelineResult:
     """Сводка одного полного запуска pipeline."""
 
     parsed_sources_count: int
+    failed_sources_count: int
     parsed_items_count: int
     saved_items_count: int
     duplicate_items_count: int
@@ -37,6 +39,7 @@ class PipelineService:
         news_repository: NewsRepository | None = None,
         post_repository: PostRepository | None = None,
         news_ingestion_service: NewsIngestionService | None = None,
+        source_batch_parsing_service: SourceBatchParsingService | None = None,
         post_generation_service: PostGenerationService | None = None,
         publishing_service: PublishingService | None = None,
     ) -> None:
@@ -45,6 +48,13 @@ class PipelineService:
         self.news_repository = news_repository or NewsRepository(session)
         self.post_repository = post_repository or PostRepository(session)
         self.news_ingestion_service = news_ingestion_service or NewsIngestionService(session)
+        self.source_batch_parsing_service = (
+            source_batch_parsing_service
+            or SourceBatchParsingService(
+                source_repository=self.source_repository,
+                ingestion_service=self.news_ingestion_service,
+            )
+        )
         self.post_generation_service = post_generation_service or PostGenerationService(session)
         self.publishing_service = publishing_service or PublishingService(session)
 
@@ -57,12 +67,16 @@ class PipelineService:
     ) -> PipelineResult:
         """Выполнить один проход pipeline для включенных источников."""
 
-        parse_results = await self._parse_enabled_sources(limit=parse_limit)
+        parse_batch = await self.source_batch_parsing_service.parse_enabled_sources(
+            limit=parse_limit
+        )
+        parse_results = parse_batch.successful
         generated_posts_count = await self._generate_ready_news(limit=generation_limit)
         published_posts_count = await self._publish_generated_posts(limit=publishing_limit)
 
         return PipelineResult(
             parsed_sources_count=len(parse_results),
+            failed_sources_count=len(parse_batch.failed),
             parsed_items_count=sum(result.parsed_count for result in parse_results),
             saved_items_count=sum(result.saved_count for result in parse_results),
             duplicate_items_count=sum(result.duplicate_count for result in parse_results),
@@ -70,15 +84,6 @@ class PipelineService:
             generated_posts_count=generated_posts_count,
             published_posts_count=published_posts_count,
         )
-
-    async def _parse_enabled_sources(self, *, limit: int) -> list[SourceParseResult]:
-        """Распарсить все включенные источники."""
-
-        sources = await self.source_repository.list_filtered(enabled=True)
-        results: list[SourceParseResult] = []
-        for source in sources:
-            results.append(await self.news_ingestion_service.parse_source(source.id, limit=limit))
-        return results
 
     async def _generate_ready_news(self, *, limit: int) -> int:
         """Сгенерировать посты для готовых новостей."""

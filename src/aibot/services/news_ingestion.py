@@ -5,11 +5,19 @@ from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from aibot.models.enums import NewsStatus, SourceType
+from aibot.config import Settings, get_settings
+from aibot.integrations.http_client import (
+    HttpClientError,
+    HttpPermanentError,
+    HttpTemporaryError,
+)
+from aibot.models.enums import ErrorScope, NewsStatus, SourceType
+from aibot.models.error_log import ErrorLog
 from aibot.models.news_item import NewsItem
 from aibot.parsers.base import NewsParser, ParsedNewsItem
-from aibot.parsers.sites import DemoSiteParser
+from aibot.parsers.rss import RssAtomParser, RssFeedParseError
 from aibot.parsers.telegram import TelegramChannelParser
+from aibot.repositories.error_log_repository import ErrorLogRepository
 from aibot.repositories.keyword_repository import KeywordRepository
 from aibot.repositories.news_repository import NewsRepository
 from aibot.repositories.source_repository import SourceRepository
@@ -40,19 +48,25 @@ class NewsIngestionService:
         source_repository: SourceRepository | None = None,
         news_repository: NewsRepository | None = None,
         keyword_repository: KeywordRepository | None = None,
+        error_log_repository: ErrorLogRepository | None = None,
+        settings: Settings | None = None,
         site_parser: NewsParser | None = None,
         telegram_parser: NewsParser | None = None,
         deduplication_service: DeduplicationService | None = None,
         keyword_filter_service: KeywordFilterService | None = None,
     ) -> None:
+        runtime_settings = settings or get_settings()
         self.session = session
         self.source_repository = source_repository or SourceRepository(session)
         self.news_repository = news_repository or NewsRepository(session)
         self.keyword_repository = keyword_repository or KeywordRepository(session)
-        self.site_parser = site_parser or DemoSiteParser()
+        self.error_log_repository = error_log_repository or ErrorLogRepository(session)
+        self.site_parser = site_parser or RssAtomParser(settings=runtime_settings)
         self.telegram_parser = telegram_parser or TelegramChannelParser()
         self.deduplication_service = deduplication_service or DeduplicationService()
-        self.keyword_filter_service = keyword_filter_service or KeywordFilterService()
+        self.keyword_filter_service = keyword_filter_service or KeywordFilterService(
+            allowed_languages=runtime_settings.allowed_news_languages
+        )
 
     async def parse_source(self, source_id: uuid.UUID, *, limit: int = 10) -> SourceParseResult:
         """Ручно распарсить источник и сохранить новые новости."""
@@ -62,11 +76,16 @@ class NewsIngestionService:
             raise EntityNotFoundError("Source not found")
         parser = self._select_parser(source.type)
 
-        parsed_items = await parser.parse(
-            source_name=source.name,
-            url=source.url,
-            limit=limit,
-        )
+        try:
+            parsed_items = await parser.parse(
+                source_name=source.name,
+                url=source.url,
+                limit=limit,
+            )
+        except Exception as exc:
+            await self._log_parser_error(source.id, exc)
+            raise
+
         enabled_keywords = await self.keyword_repository.list_enabled()
 
         duplicate_count = 0
@@ -139,3 +158,31 @@ class NewsIngestionService:
             existing_urls=existing_urls,
             existing_hashes=existing_hashes,
         )
+
+    async def _log_parser_error(self, source_id: uuid.UUID, exc: Exception) -> None:
+        """Безопасно сохранить ошибку parser-а, не меняя её тип."""
+
+        message, details = self._parser_error_payload(exc)
+        await self.error_log_repository.add(
+            ErrorLog(
+                scope=ErrorScope.PARSER,
+                message=message,
+                details=details,
+                source_id=source_id,
+            )
+        )
+        await self.session.commit()
+
+    @staticmethod
+    def _parser_error_payload(exc: Exception) -> tuple[str, str]:
+        """Классифицировать parser-ошибку и скрыть детали неизвестных исключений."""
+
+        if isinstance(exc, HttpTemporaryError):
+            return "Temporary source parsing failure", str(exc)
+        if isinstance(exc, HttpPermanentError):
+            return "Permanent source parsing failure", str(exc)
+        if isinstance(exc, RssFeedParseError):
+            return "Invalid RSS/Atom feed", str(exc)
+        if isinstance(exc, HttpClientError):
+            return "Source HTTP parsing failure", str(exc)
+        return "Unexpected source parsing failure", exc.__class__.__name__

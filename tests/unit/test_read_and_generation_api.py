@@ -12,6 +12,7 @@ from aibot.api.deps import (
     get_post_generation_service,
     get_post_service,
     get_publishing_service,
+    get_task_queue,
 )
 from aibot.main import app
 from aibot.models.enums import ErrorScope, NewsStatus, PostStatus
@@ -124,19 +125,55 @@ class FakePostService:
 class FakePostGenerationService:
     """Fake post generation service для проверки news generate endpoint."""
 
-    async def generate_post_from_news(self, news_id: uuid.UUID) -> FakePost:
+    manual_generation_called = False
+    news_generation_called = False
+
+    async def get_generation_candidate(self, news_id: uuid.UUID) -> FakeNewsItem:
         if news_id != FakeNewsService.news_id:
             raise EntityNotFoundError("News item not found")
-        return FakePostService()._post()
+        return FakeNewsService()._news_item()
+
+    async def generate_manual_post(self, text: str) -> str:
+        self.manual_generation_called = True
+        raise AssertionError("Heavy manual generation must run in Celery")
+
+    async def generate_post_from_news(self, news_id: uuid.UUID) -> FakePost:
+        self.news_generation_called = True
+        raise AssertionError("Heavy news generation must run in Celery")
 
 
 class FakePublishingService:
     """Fake publishing service для проверки publish endpoint."""
 
-    async def publish_post(self, post_id: uuid.UUID) -> None:
+    publish_called = False
+
+    async def get_publishable_post(self, post_id: uuid.UUID) -> FakePost:
         if post_id != FakePostService.post_id:
             raise EntityNotFoundError("Post not found")
-        FakePostService.published = True
+        return FakePostService()._post()
+
+    async def publish_post(self, post_id: uuid.UUID) -> None:
+        self.publish_called = True
+        raise AssertionError("Heavy publication must run in Celery")
+
+
+class FakeTaskQueue:
+    """Зафиксировать API-постановку тяжёлых Celery-задач."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, object]] = []
+
+    def enqueue_news_generation(self, news_id: uuid.UUID) -> str:
+        self.calls.append(("generate_news", news_id))
+        return "generate-news-task-id"
+
+    def enqueue_post_publication(self, post_id: uuid.UUID) -> str:
+        self.calls.append(("publish_post", post_id))
+        return "publish-post-task-id"
+
+    def enqueue_manual_generation(self, text: str) -> str:
+        self.calls.append(("generate_text", text))
+        return "generate-text-task-id"
 
 
 class FakeErrorLogService:
@@ -160,32 +197,46 @@ class FakeErrorLogService:
 def test_news_posts_logs_contracts() -> None:
     """Read-only API endpoints возвращают ожидаемые JSON-контракты."""
 
+    task_queue = FakeTaskQueue()
     app.dependency_overrides[get_news_service] = FakeNewsService
     app.dependency_overrides[get_post_service] = FakePostService
     app.dependency_overrides[get_post_generation_service] = FakePostGenerationService
     app.dependency_overrides[get_publishing_service] = FakePublishingService
     app.dependency_overrides[get_error_log_service] = FakeErrorLogService
+    app.dependency_overrides[get_task_queue] = lambda: task_queue
     client = TestClient(app)
 
     try:
         FakePostService.published = False
+        FakePostGenerationService.news_generation_called = False
+        FakePublishingService.publish_called = False
         news_response = client.get("/api/news/")
         assert news_response.status_code == 200
         assert news_response.json()[0]["status"] == "ready_for_generation"
 
         queue_generation_response = client.post(f"/api/news/{FakeNewsService.news_id}/generate")
-        assert queue_generation_response.status_code == 200
-        assert queue_generation_response.json()["status"] == "generated"
-        assert queue_generation_response.json()["news_id"] == str(FakeNewsService.news_id)
+        assert queue_generation_response.status_code == 202
+        assert queue_generation_response.json() == {
+            "task_id": "generate-news-task-id",
+            "status": "queued",
+        }
+        assert FakePostGenerationService.news_generation_called is False
 
         posts_response = client.get("/api/posts/")
         assert posts_response.status_code == 200
         assert posts_response.json()[0]["generated_text"] == "Generated post"
 
         queue_publish_response = client.post(f"/api/posts/{FakePostService.post_id}/publish")
-        assert queue_publish_response.status_code == 200
-        assert queue_publish_response.json()["status"] == "published"
-        assert queue_publish_response.json()["telegram_message_id"] == "dry-run-message"
+        assert queue_publish_response.status_code == 202
+        assert queue_publish_response.json() == {
+            "task_id": "publish-post-task-id",
+            "status": "queued",
+        }
+        assert FakePublishingService.publish_called is False
+        assert task_queue.calls == [
+            ("generate_news", FakeNewsService.news_id),
+            ("publish_post", FakePostService.post_id),
+        ]
 
         logs_response = client.get("/api/logs/")
         assert logs_response.status_code == 200
@@ -195,17 +246,35 @@ def test_news_posts_logs_contracts() -> None:
         app.dependency_overrides.clear()
 
 
-def test_manual_generation_works_without_external_keys() -> None:
-    """Manual generation использует fake AI режим и не требует ключей."""
+def test_manual_generation_queues_celery_task() -> None:
+    """Manual generation возвращает task_id без синхронного AI-вызова."""
 
+    task_queue = FakeTaskQueue()
+    FakePostGenerationService.manual_generation_called = False
+    app.dependency_overrides[get_post_generation_service] = FakePostGenerationService
+    app.dependency_overrides[get_task_queue] = lambda: task_queue
     client = TestClient(app)
 
-    response = client.post(
-        "/api/generate/",
-        json={"text": "Python получил важное обновление производительности.", "source": "manual"},
-    )
+    try:
+        response = client.post(
+            "/api/generate/",
+            json={
+                "text": "Python получил важное обновление производительности.",
+                "source": "manual",
+            },
+        )
 
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["fake_mode"] is True
-    assert "Python получил важное обновление" in payload["generated_text"]
+        assert response.status_code == 202
+        assert response.json() == {
+            "task_id": "generate-text-task-id",
+            "status": "queued",
+        }
+        assert FakePostGenerationService.manual_generation_called is False
+        assert task_queue.calls == [
+            (
+                "generate_text",
+                "Python получил важное обновление производительности.",
+            )
+        ]
+    finally:
+        app.dependency_overrides.clear()

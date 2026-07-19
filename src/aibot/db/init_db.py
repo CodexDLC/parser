@@ -1,22 +1,29 @@
-"""Создание таблиц PostgreSQL для первого рабочего прототипа."""
+"""Применение versioned Alembic-миграций к PostgreSQL."""
 
-import asyncio
+from pathlib import Path
 
-from aibot.db.base import Base
-from aibot.db.session import engine
+from alembic import command
+from alembic.config import Config
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 
-async def init_db() -> None:
-    """Создать все таблицы из SQLAlchemy metadata."""
+def build_alembic_config() -> Config:
+    """Собрать Alembic config относительно корня проекта."""
 
-    async with engine.begin() as connection:
-        await connection.run_sync(Base.metadata.create_all)
+    return Config(str(PROJECT_ROOT / "alembic.ini"))
+
+
+def init_db() -> None:
+    """Обновить схему базы данных до последней Alembic revision."""
+
+    command.upgrade(build_alembic_config(), "head")
 
 
 def main() -> None:
     """Запустить инициализацию БД из командной строки."""
 
-    asyncio.run(init_db())
+    init_db()
 
 
 if __name__ == "__main__":

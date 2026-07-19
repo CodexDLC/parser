@@ -20,8 +20,11 @@ Project M4 - backend-сервис для автоматизации новост
 - [api-design.md](api-design.md) - план REST API и основные эндпоинты.
 - [celery-pipeline.md](celery-pipeline.md) - фоновые задачи и пайплайн обработки.
 - [integrations.md](integrations.md) - внешние сервисы: OpenAI, Telethon, источники новостей.
+- [integration-verification-report.md](integration-verification-report.md) - результат
+  безопасной live-проверки OpenAI и Telegram.
 - [development-plan.md](development-plan.md) - порядок разработки по этапам.
 - [runtime-and-dependencies.md](runtime-and-dependencies.md) - версия Python и зависимости проекта.
+- [acceptance-tests.md](acceptance-tests.md) - обязательный набор проверок базовой сборки.
 - [checklist.md](checklist.md) - чеклист готовности проекта к сдаче.
 
 ## Project Agent Skills

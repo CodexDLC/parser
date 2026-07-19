@@ -1,11 +1,16 @@
 """Тесты Telegram client/parser в безопасном dry-run режиме."""
 
 from datetime import UTC, datetime
+from typing import Any
 
 import pytest
 
 from aibot.config import Settings
-from aibot.integrations.telegram_client import TelegramChannelMessage, TelegramClient
+from aibot.integrations.telegram_client import (
+    TelegramAuthorizationError,
+    TelegramChannelMessage,
+    TelegramClient,
+)
 from aibot.parsers.telegram import TelegramChannelParser
 
 
@@ -28,6 +33,62 @@ class FakeTelegramClient:
                 url=f"https://t.me/{channel.removeprefix('@')}/42",
             )
         ][:limit]
+
+
+class FakeTelethonClient:
+    """Неинтерактивный Telethon double для real-mode контрактов."""
+
+    authorized = True
+    instances: list["FakeTelethonClient"] = []
+
+    def __init__(self, *_: Any) -> None:
+        self.connected = False
+        self.disconnected = False
+        self.started = False
+        self.__class__.instances.append(self)
+
+    async def connect(self) -> None:
+        """Зафиксировать явное подключение без вызова start()."""
+
+        self.connected = True
+
+    async def disconnect(self) -> None:
+        """Зафиксировать освобождение соединения."""
+
+        self.disconnected = True
+
+    async def start(self) -> None:
+        """Имитировать явно запрошенную интерактивную авторизацию."""
+
+        self.started = True
+
+    async def is_user_authorized(self) -> bool:
+        """Вернуть управляемый статус session."""
+
+        return self.authorized
+
+    async def get_me(self) -> object:
+        """Имитировать проверку авторизованного аккаунта."""
+
+        return object()
+
+    async def iter_messages(self, _: str, *, limit: int) -> Any:
+        """Вернуть одно сообщение через async iterator."""
+
+        messages = [
+            type(
+                "Message",
+                (),
+                {
+                    "id": 77,
+                    "raw_text": "Live Telegram message",
+                    "message": "Live Telegram message",
+                    "date": datetime(2026, 7, 19, tzinfo=UTC),
+                },
+            )()
+        ]
+        for message in messages[:limit]:
+            yield message
 
 
 @pytest.mark.asyncio
@@ -60,4 +121,76 @@ async def test_telegram_parser_normalizes_messages() -> None:
     assert "Новая версия" in items[0].summary
     assert items[0].source == "Demo Telegram"
     assert items[0].url == "https://t.me/demo_channel/42"
+    assert items[0].raw_text is not None
     assert items[0].raw_text.startswith("Python release")
+
+
+@pytest.mark.asyncio
+async def test_real_telegram_read_uses_noninteractive_authorized_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Real-mode явно подключается и не запускает интерактивную авторизацию."""
+
+    FakeTelethonClient.authorized = True
+    FakeTelethonClient.instances.clear()
+    monkeypatch.setattr("telethon.TelegramClient", FakeTelethonClient)
+    client = TelegramClient(
+        Settings(
+            telegram_api_id=123,
+            telegram_api_hash="hash",
+            telegram_dry_run=False,
+        )
+    )
+
+    messages = await client.read_channel_messages("@public_channel", limit=1)
+
+    assert [message.message_id for message in messages] == [77]
+    assert len(FakeTelethonClient.instances) == 1
+    assert FakeTelethonClient.instances[0].connected is True
+    assert FakeTelethonClient.instances[0].disconnected is True
+
+
+@pytest.mark.asyncio
+async def test_real_telegram_rejects_unauthorized_session_without_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Background runtime завершается типизированной ошибкой вместо запроса телефона."""
+
+    FakeTelethonClient.authorized = False
+    FakeTelethonClient.instances.clear()
+    monkeypatch.setattr("telethon.TelegramClient", FakeTelethonClient)
+    client = TelegramClient(
+        Settings(
+            telegram_api_id=123,
+            telegram_api_hash="hash",
+            telegram_dry_run=False,
+        )
+    )
+
+    with pytest.raises(TelegramAuthorizationError):
+        await client.verify_connection()
+
+    assert FakeTelethonClient.instances[0].disconnected is True
+
+
+@pytest.mark.asyncio
+async def test_telegram_session_authorization_is_a_separate_explicit_action(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Только специальная операция имеет право вызвать интерактивный start()."""
+
+    FakeTelethonClient.authorized = True
+    FakeTelethonClient.instances.clear()
+    monkeypatch.setattr("telethon.TelegramClient", FakeTelethonClient)
+    client = TelegramClient(
+        Settings(
+            telegram_api_id=123,
+            telegram_api_hash="hash",
+            telegram_dry_run=True,
+        )
+    )
+
+    await client.authorize_session()
+
+    assert FakeTelethonClient.instances[0].started is True
+    assert FakeTelethonClient.instances[0].disconnected is True

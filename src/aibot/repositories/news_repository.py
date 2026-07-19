@@ -26,6 +26,16 @@ class NewsRepository(BaseRepository[NewsItem]):
             select(NewsItem).where(NewsItem.content_hash == content_hash)
         )
 
+    async def get_for_generation(self, news_id: uuid.UUID) -> NewsItem | None:
+        """Получить news с row lock или вернуть None, если lock уже занят."""
+
+        statement = (
+            select(NewsItem)
+            .where(NewsItem.id == news_id)
+            .with_for_update(skip_locked=True)
+        )
+        return await self.session.scalar(statement)
+
     async def list_filtered(
         self,
         *,

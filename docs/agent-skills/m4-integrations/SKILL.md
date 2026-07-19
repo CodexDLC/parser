@@ -18,10 +18,13 @@ Before integration changes, read:
 - Isolate external SDK details in `src/aibot/integrations/`.
 - Keep parser-specific HTML or Telegram details out of services.
 - Never commit real API keys, Telegram sessions, tokens, or `.env`.
-- Add dry-run or fake modes where useful for local demo and tests.
+- Keep `TELEGRAM_DRY_RUN` for safe publishing.
+- Do not add an AI runtime fake mode; inject test doubles through the AI port in tests.
 
 ## AI Rules
 
+- Use `codex-ai[openai]==0.2.5` as the only runtime AI provider.
+- Read the OpenAI key from `OPENAI_API_KEY` and the model from `OPENAI_MODEL`.
 - Build prompts in one place.
 - Keep generated posts concise and fact-preserving.
 - Handle rate limit, timeout, auth, invalid response, and empty response errors.

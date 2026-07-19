@@ -92,6 +92,7 @@ async def test_saved_news_filtering_marks_matching_news_ready() -> None:
     assert result.status == NewsStatus.READY_FOR_GENERATION
     assert result.reason == "matched_keywords"
     assert result.matched_keywords == ["python"]
+    assert result.detected_language == "en"
     assert news_item.status == NewsStatus.READY_FOR_GENERATION
     assert session.commits == 1
     assert session.refreshed == 1

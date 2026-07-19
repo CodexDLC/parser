@@ -57,7 +57,7 @@ Query-параметры:
 
 Запустить ручной парсинг конкретного источника через Celery.
 
-Ответ:
+Успешный ответ: `202 Accepted`.
 
 ```json
 {
@@ -112,6 +112,10 @@ Query-параметры:
 
 Запустить генерацию поста для конкретной новости.
 
+Успешный ответ: `202 Accepted` с `task_id` и `status="queued"`.
+До постановки задачи API проверяет, что новость существует и имеет статус
+`ready_for_generation`.
+
 ## Posts
 
 ### `GET /api/posts/`
@@ -135,6 +139,7 @@ Query-параметры:
 Правило:
 
 - если пост уже `published`, вернуть ошибку 409 Conflict.
+- успешный ответ: `202 Accepted` с `task_id` и `status="queued"`.
 
 ## Manual Generation
 
@@ -151,15 +156,29 @@ Query-параметры:
 }
 ```
 
-Пример ответа:
+Успешный ответ: `202 Accepted`.
 
 ```json
 {
-  "generated_text": "..."
+  "task_id": "celery-task-id",
+  "status": "queued"
 }
 ```
 
 Этот эндпоинт полезен для демонстрации AI-интеграции без полного pipeline.
+
+## Фоновые операции
+
+Все четыре тяжёлых endpoint используют единый контракт:
+
+- `POST /api/sources/{source_id}/parse`;
+- `POST /api/news/{news_id}/generate`;
+- `POST /api/posts/{post_id}/publish`;
+- `POST /api/generate/`.
+
+HTTP handler выполняет только валидацию и постановку задачи. Парсинг, AI и Telegram
+не вызываются внутри HTTP-запроса. Итог сохраняется доменными сервисами в PostgreSQL,
+а технический результат задачи доступен через Celery backend по полученному `task_id`.
 
 ## Logs
 
@@ -186,4 +205,3 @@ Query-параметры:
   "status": "ok"
 }
 ```
-

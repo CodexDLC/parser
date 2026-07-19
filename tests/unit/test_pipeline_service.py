@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 import pytest
 
+from aibot.integrations.http_client import HttpTemporaryError
 from aibot.models.enums import NewsStatus, PostStatus
 from aibot.services.news_ingestion import SourceParseResult
 from aibot.services.pipeline import PipelineService
@@ -36,10 +37,11 @@ class FakePost:
 class FakeSourceRepository:
     """Fake source repository."""
 
+    failed_source_id = uuid.UUID("00000000-0000-0000-0000-000000000000")
     source_id = uuid.UUID("11111111-1111-1111-1111-111111111111")
 
     async def list_filtered(self, **_: object) -> list[FakeSource]:
-        return [FakeSource(self.source_id)]
+        return [FakeSource(self.failed_source_id), FakeSource(self.source_id)]
 
 
 class FakeNewsRepository:
@@ -73,6 +75,8 @@ class FakeNewsIngestionService:
     async def parse_source(self, source_id: uuid.UUID, *, limit: int = 10) -> SourceParseResult:
         self.parsed_source_ids.append(source_id)
         assert limit == 2
+        if source_id == FakeSourceRepository.failed_source_id:
+            raise HttpTemporaryError("first source failed")
         return SourceParseResult(
             source_id=source_id,
             parsed_count=2,
@@ -105,7 +109,7 @@ class FakePublishingService:
 
 @pytest.mark.asyncio
 async def test_pipeline_service_runs_parse_generate_publish_steps() -> None:
-    """PipelineService последовательно выполняет parse, generate и publish шаги."""
+    """Pipeline продолжает generate/publish после сбоя одного source."""
 
     ingestion_service = FakeNewsIngestionService()
     generation_service = FakePostGenerationService()
@@ -123,12 +127,16 @@ async def test_pipeline_service_runs_parse_generate_publish_steps() -> None:
     result = await service.run_once(parse_limit=2, generation_limit=3, publishing_limit=4)
 
     assert result.parsed_sources_count == 1
+    assert result.failed_sources_count == 1
     assert result.parsed_items_count == 2
     assert result.saved_items_count == 1
     assert result.duplicate_items_count == 1
     assert result.ready_items_count == 1
     assert result.generated_posts_count == 1
     assert result.published_posts_count == 1
-    assert ingestion_service.parsed_source_ids == [FakeSourceRepository.source_id]
+    assert ingestion_service.parsed_source_ids == [
+        FakeSourceRepository.failed_source_id,
+        FakeSourceRepository.source_id,
+    ]
     assert generation_service.generated_news_ids == [FakeNewsRepository.news_id]
     assert publishing_service.published_post_ids == [FakePostRepository.post_id]

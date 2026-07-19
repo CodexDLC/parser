@@ -38,7 +38,8 @@ requires-python = ">=3.12,<3.13"
 - `sqlalchemy[asyncio]` - ORM и async database layer.
 - `asyncpg` - async-драйвер PostgreSQL.
 - `psycopg[binary]` - PostgreSQL-драйвер, полезный для sync-инструментов и миграций.
-- `alembic` - миграции БД.
+- `alembic` - единственный production-механизм создания и изменения схемы БД;
+  initial revision покрывает все пять ORM-моделей и проверяется round-trip тестом.
 
 ### Celery And Redis
 
@@ -48,7 +49,8 @@ requires-python = ">=3.12,<3.13"
 ### Telegram And AI
 
 - `telethon` - чтение Telegram-каналов и публикация постов.
-- `openai` - OpenAI-compatible клиент для AI-генерации.
+- `codex-ai[openai]==0.2.5` - единый AI provider; OpenAI-интеграция работает через
+  Responses API и `gpt-5.6-terra`.
 - `tenacity` - retry/backoff для внешних API.
 
 ### Parsing
@@ -74,4 +76,3 @@ requires-python = ">=3.12,<3.13"
 Группа `test` дополнительно содержит:
 
 - `testcontainers[postgres]` для интеграционных тестов с PostgreSQL.
-
