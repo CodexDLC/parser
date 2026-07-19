@@ -195,6 +195,29 @@ async def test_passive_health_is_cached_and_does_not_probe_external_providers() 
     assert health["Beat"].detail == "расписание настроено"
 
 
+async def test_passive_health_uses_selected_bot_api_configuration() -> None:
+    """Bot API health не требует Telethon credentials и остаётся пассивным."""
+
+    settings = dashboard_settings().model_copy(
+        update={
+            "telegram_publisher": "bot_api",
+            "telegram_bot_token": "configured-but-must-not-be-called",
+            "telegram_api_id": None,
+            "telegram_api_hash": None,
+            "telegram_dry_run": False,
+        }
+    )
+    service = PassiveHealthService(
+        settings=settings,
+        redis_probe=CountingRedisProbe(),
+    )
+
+    health = {item.service: item for item in await service.load(database_available=True)}
+
+    assert health["Telegram"].status == "настроен"
+    assert health["Telegram"].detail == "publisher=bot_api; без отправки сообщений"
+
+
 def test_invalid_cabinet_timezone_is_rejected() -> None:
     """Операторская timezone валидируется при старте."""
 

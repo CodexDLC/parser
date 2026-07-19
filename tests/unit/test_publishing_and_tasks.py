@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 import pytest
 
 from aibot.config import Settings
+from aibot.integrations.telegram_bot_publisher import TelegramBotPublisher
 from aibot.integrations.telegram_client import TelegramClient
 from aibot.models.enums import ErrorScope, PostStatus
 from aibot.models.error_log import ErrorLog
@@ -112,6 +113,21 @@ async def test_publishing_service_uses_telegram_dry_run() -> None:
     assert session.flushed == 1
     assert session.commits == 1
     assert session.refreshed == 1
+
+
+def test_publishing_service_selects_bot_api_from_settings() -> None:
+    """Pipeline использует выбранный publisher, а не всегда Telethon."""
+
+    service = PublishingService(
+        FakeSession(),  # type: ignore[arg-type]
+        settings=Settings(
+            telegram_publisher="bot_api",
+            telegram_dry_run=True,
+        ),
+        repository=FakePostRepository(make_post()),  # type: ignore[arg-type]
+    )
+
+    assert isinstance(service.telegram_publisher, TelegramBotPublisher)
 
 
 @pytest.mark.asyncio

@@ -147,6 +147,7 @@
 
 - publisher service;
 - Telethon client;
+- optional Bot API publisher с явным выбором без fallback;
 - `POST /api/posts/{post_id}/publish`;
 - dry-run режим;
 - защиту от повторной публикации.
@@ -155,6 +156,7 @@
 
 - dry-run не отправляет сообщение, но меняет статус предсказуемо;
 - реальная публикация работает при заданных секретах;
+- выбранный publisher не требует credentials другого publication adapter;
 - повторная публикация возвращает ошибку.
 
 ## Этап 9. Финализация сдачи

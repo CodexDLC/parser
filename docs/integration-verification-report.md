@@ -22,6 +22,7 @@ uv run python -m aibot.verify_integrations --service openai
 Текущая локальная конфигурация:
 
 - `TELEGRAM_DRY_RUN=true`;
+- `TELEGRAM_PUBLISHER=telethon` по умолчанию;
 - `TELEGRAM_API_ID` не настроен;
 - `TELEGRAM_API_HASH` не настроен;
 - `TELEGRAM_TARGET_CHANNEL` не настроен;
@@ -31,6 +32,19 @@ uv run python -m aibot.verify_integrations --service openai
 покрыты автоматическими тестами. Production client переведён на неинтерактивное
 подключение: worker не запрашивает телефон или код и возвращает типизированную ошибку,
 если session не авторизована.
+
+После этой проверки integration boundary расширена без отмены исходного контракта:
+
+- Telethon reader и publisher разделены;
+- добавлен `TELEGRAM_PUBLISHER=bot_api`;
+- Bot API publisher использует `TELEGRAM_BOT_TOKEN` и общий
+  `TELEGRAM_TARGET_CHANNEL`;
+- publisher factory не делает fallback между adapters;
+- live-verifier не требует Telethon session для Bot API, пока не передан
+  `--telegram-source`.
+
+Реальный Bot API вызов ещё не выполнялся: BotFather token и тестовый канал не
+предоставлены. Этот пункт остаётся внешним prerequisite, а не считается пройденным.
 
 После заполнения настроек:
 
@@ -42,6 +56,17 @@ uv run python -m aibot.verify_integrations --service telegram --publish-telegram
 
 Последняя команда действительно отправляет один тестовый пост в настроенный целевой
 канал и должна запускаться только намеренно.
+
+Для Bot API режима авторизация session не нужна:
+
+```powershell
+$env:TELEGRAM_PUBLISHER = "bot_api"
+uv run python -m aibot.verify_integrations --service telegram
+uv run python -m aibot.verify_integrations --service telegram --publish-telegram-test
+```
+
+Если вместе с Bot API используется `Source(type="tg")`, команда
+`aibot.authorize_telegram` и Telethon credentials всё равно обязательны для reader-а.
 
 ## Безопасность результата
 

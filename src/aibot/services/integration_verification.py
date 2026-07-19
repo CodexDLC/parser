@@ -11,13 +11,15 @@ from aibot.integrations.ai_client import (
     AIClientError,
     AIClientRateLimitError,
 )
-from aibot.integrations.telegram_client import (
+from aibot.integrations.telegram_common import (
     TelegramAuthorizationError,
     TelegramChannelMessage,
-    TelegramClient,
     TelegramClientError,
     TelegramConfigurationError,
 )
+from aibot.integrations.telegram_publisher_factory import build_telegram_publisher
+from aibot.integrations.telethon_reader import TelethonChannelReader
+from aibot.ports.telegram import TelegramPublisherPort, TelegramSourceReaderPort
 
 OPENAI_VERIFICATION_INPUT = (
     "Python получил небольшое обновление производительности. "
@@ -82,10 +84,19 @@ class IntegrationVerificationService:
         *,
         ai_client: AIClientPort | None = None,
         telegram_client: TelegramClientPort | None = None,
+        telegram_reader: TelegramSourceReaderPort | None = None,
+        telegram_publisher: TelegramPublisherPort | None = None,
     ) -> None:
+        if telegram_client is not None and (
+            telegram_reader is not None or telegram_publisher is not None
+        ):
+            raise ValueError("Provide telegram_client or separate reader/publisher, not both")
         self.settings = settings
         self.ai_client = ai_client or AIClient(settings)
-        self.telegram_client = telegram_client or TelegramClient(settings)
+        self.telegram_reader = telegram_reader or telegram_client or TelethonChannelReader(settings)
+        self.telegram_publisher = (
+            telegram_publisher or telegram_client or build_telegram_publisher(settings)
+        )
 
     async def verify_openai(self) -> IntegrationCheckResult:
         """Выполнить один минимальный реальный запрос через production AI adapter."""
@@ -128,14 +139,15 @@ class IntegrationVerificationService:
             )
 
         try:
-            await self.telegram_client.verify_connection()
+            await self.telegram_publisher.verify_connection()
             messages_read = None
             if source:
-                messages = await self.telegram_client.read_channel_messages(source, limit=1)
+                await self.telegram_reader.verify_connection()
+                messages = await self.telegram_reader.read_channel_messages(source, limit=1)
                 messages_read = len(messages)
             test_message_id = None
             if publish_test:
-                test_message_id = await self.telegram_client.publish_message(
+                test_message_id = await self.telegram_publisher.publish_message(
                     TELEGRAM_VERIFICATION_MESSAGE
                 )
         except (TelegramConfigurationError, TelegramAuthorizationError) as exc:

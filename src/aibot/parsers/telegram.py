@@ -1,8 +1,10 @@
 """Парсер публичных Telegram-каналов через Telethon."""
 
 from aibot.config import Settings, get_settings
-from aibot.integrations.telegram_client import TelegramChannelMessage, TelegramClient
+from aibot.integrations.telegram_common import TelegramChannelMessage
+from aibot.integrations.telethon_reader import TelethonChannelReader
 from aibot.parsers.base import ParsedNewsItem
+from aibot.ports.telegram import TelegramSourceReaderPort
 
 
 class TelegramChannelParser:
@@ -12,10 +14,10 @@ class TelegramChannelParser:
         self,
         *,
         settings: Settings | None = None,
-        telegram_client: TelegramClient | None = None,
+        telegram_client: TelegramSourceReaderPort | None = None,
     ) -> None:
         self.settings = settings or get_settings()
-        self.telegram_client = telegram_client or TelegramClient(self.settings)
+        self.telegram_client = telegram_client or TelethonChannelReader(self.settings)
 
     async def parse(
         self,

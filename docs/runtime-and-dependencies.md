@@ -64,7 +64,10 @@ boundary и PostgreSQL row lock; публикация удерживает Post 
 
 ### Telegram And AI
 
-- `telethon` - чтение Telegram-каналов и публикация постов.
+- `telethon` - обязательное чтение публичных Telegram-каналов и вариант публикации
+  для демонстрации Project M4.
+- `httpx` - также используется отдельным Bot API publisher для исходящей публикации
+  без пользовательской Telegram session.
 - `codex-ai[openai]==0.2.5` - единый AI provider; OpenAI-интеграция работает через
   Responses API и `gpt-5.6-terra`.
 - `tenacity` - retry/backoff для внешних API.
@@ -92,3 +95,30 @@ boundary и PostgreSQL row lock; публикация удерживает Post 
 Группа `test` дополнительно содержит:
 
 - `testcontainers[postgres]` для интеграционных тестов с PostgreSQL.
+
+## Container Runtime
+
+Один multi-stage `Dockerfile` устанавливает production dependencies строго из
+`uv.lock` и запускает приложение от UID/GID `10001`, без root capabilities. В image
+не копируются env-файлы, Telegram session, tests, docs или локальные кэши.
+
+`docker-compose.yml` использует этот image для четырёх независимых ролей:
+
+- `migrate` — единственный владелец `alembic upgrade head`;
+- `api` — FastAPI и административный кабинет;
+- `worker` — singleton Celery Worker и единственный runtime-владелец Telethon session;
+- `beat` — singleton scheduler с отдельным persistent schedule volume.
+
+PostgreSQL и Redis имеют healthchecks и persistent volumes. `api`, `worker` и `beat`
+зависят от успешно завершившегося `migrate`; Worker и API дополнительно ждут healthy
+Redis. В полном стеке наружу публикуется только API. Отдельный
+`docker-compose.dev.yml` открывает PostgreSQL и Redis на `127.0.0.1` только для
+локальных Python-команд и integration-тестов.
+
+Application containers используют read-only root filesystem, writable tmpfs `/tmp`,
+`no-new-privileges` и `cap_drop: ALL`. Telethon и Beat получают только собственные
+writable named volumes.
+
+Расширенный production hardening после тестового VPS включает закрепление base image
+digest, SBOM/vulnerability scan и проверяемый backup/restore PostgreSQL и Telethon
+session.

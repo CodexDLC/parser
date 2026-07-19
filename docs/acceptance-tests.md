@@ -31,6 +31,13 @@
 17. Повторный idempotency key создаёт один `PipelineRun` и одну Celery-задачу;
     status polling не раскрывает payload или credentials.
 18. Конкурентная публикация блокируется PostgreSQL row lock до Telegram-вызова.
+19. Telegram publication factory по умолчанию сохраняет Telethon, явно выбирает
+    Bot API без fallback, а RSS + Bot API verification не требует Telethon session.
+    Оба publisher-а поддерживают безопасный dry-run; Bot API ошибки не раскрывают
+    token или provider description.
+20. Container acceptance собирает один production image, выполняет Alembic отдельным
+    one-shot сервисом и проверяет healthy API/Worker, singleton Beat, non-root runtime
+    и отсутствие `.env` внутри image filesystem.
 
 ## Запуск
 
@@ -40,7 +47,8 @@
 .\scripts\acceptance.ps1
 ```
 
-Скрипт самостоятельно запускает PostgreSQL и Redis. Контейнеры после проверки остаются
+Скрипт самостоятельно запускает PostgreSQL и Redis через `docker-compose.dev.yml`,
+который публикует их порты только на loopback. Контейнеры после проверки остаются
 запущенными для локальной разработки.
 
 ## Обычный pytest и строгий режим
@@ -58,3 +66,15 @@ uv run pytest --require-infrastructure
 ```
 
 Если PostgreSQL или Redis недоступны, команда завершается ошибкой.
+
+## Контейнерный acceptance
+
+Изолированная проверка полного runtime-стека:
+
+```powershell
+.\scripts\container-acceptance.ps1
+```
+
+Скрипт использует отдельные project name, порты и volumes, поэтому не изменяет
+локальную базу `m4`. Внешние OpenAI/Telegram запросы не выполняются. Для сохранения
+стека после проверки используется `-KeepStack`.

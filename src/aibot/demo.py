@@ -8,7 +8,7 @@ from typing import Any
 
 from aibot.config import Settings, get_settings
 from aibot.integrations.ai_client import AIClient
-from aibot.integrations.telegram_client import TelegramClient
+from aibot.integrations.telegram_publisher_factory import build_telegram_publisher
 from aibot.parsers.sites import DemoSiteParser
 from aibot.services.deduplication import DeduplicationService, build_content_hash
 from aibot.services.filtering import KeywordFilterService
@@ -65,14 +65,12 @@ async def run_demo_pipeline(
 
     parser = DemoSiteParser()
     deduplication_service = DeduplicationService()
-    filter_service = KeywordFilterService(
-        allowed_languages=runtime_settings.allowed_news_languages
-    )
+    filter_service = KeywordFilterService(allowed_languages=runtime_settings.allowed_news_languages)
     generation_service = PostGenerationService(
         settings=runtime_settings,
         ai_client=ai_client,
     )
-    telegram_client = TelegramClient(runtime_settings)
+    telegram_publisher = build_telegram_publisher(runtime_settings)
 
     parsed_items = await parser.parse(source_name=source_name, url=source_url, limit=limit)
     existing_urls: set[str] = set()
@@ -103,7 +101,7 @@ async def run_demo_pipeline(
         generated_text = await generation_service.generate_manual_post(
             parsed_item.text_for_filtering
         )
-        telegram_message_id = await telegram_client.publish_message(generated_text)
+        telegram_message_id = await telegram_publisher.publish_message(generated_text)
         posts.append(
             DemoGeneratedPost(
                 title=parsed_item.title,

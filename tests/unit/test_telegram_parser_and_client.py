@@ -40,6 +40,7 @@ class FakeTelethonClient:
 
     authorized = True
     instances: list["FakeTelethonClient"] = []
+    sent_messages: list[tuple[str, str]] = []
 
     def __init__(self, *_: Any) -> None:
         self.connected = False
@@ -71,6 +72,12 @@ class FakeTelethonClient:
         """Имитировать проверку авторизованного аккаунта."""
 
         return object()
+
+    async def send_message(self, channel: str, text: str) -> object:
+        """Имитировать Telethon-публикацию."""
+
+        self.__class__.sent_messages.append((channel, text))
+        return type("PublishedMessage", (), {"id": 88})()
 
     async def iter_messages(self, _: str, *, limit: int) -> Any:
         """Вернуть одно сообщение через async iterator."""
@@ -147,6 +154,32 @@ async def test_real_telegram_read_uses_noninteractive_authorized_session(
     assert [message.message_id for message in messages] == [77]
     assert len(FakeTelethonClient.instances) == 1
     assert FakeTelethonClient.instances[0].connected is True
+    assert FakeTelethonClient.instances[0].disconnected is True
+
+
+@pytest.mark.asyncio
+async def test_real_telethon_publication_remains_supported(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Project M4 по-прежнему может публиковать через Telethon."""
+
+    FakeTelethonClient.authorized = True
+    FakeTelethonClient.instances.clear()
+    FakeTelethonClient.sent_messages.clear()
+    monkeypatch.setattr("telethon.TelegramClient", FakeTelethonClient)
+    client = TelegramClient(
+        Settings(
+            telegram_api_id=123,
+            telegram_api_hash="hash",
+            telegram_target_channel="@project_m4_test",
+            telegram_dry_run=False,
+        )
+    )
+
+    message_id = await client.publish_message("Generated text")
+
+    assert message_id == "88"
+    assert FakeTelethonClient.sent_messages == [("@project_m4_test", "Generated text")]
     assert FakeTelethonClient.instances[0].disconnected is True
 
 

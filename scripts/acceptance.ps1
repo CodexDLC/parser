@@ -21,8 +21,13 @@ function Invoke-Checked {
 Push-Location $repoRoot
 try {
     Invoke-Checked { uv sync --extra dev } "Dependency sync"
-    Invoke-Checked { docker compose config --quiet } "Docker Compose validation"
-    Invoke-Checked { docker compose up -d --wait postgres redis } "Infrastructure startup"
+    Invoke-Checked {
+        docker compose -f docker-compose.yml -f docker-compose.dev.yml config --quiet
+    } "Docker Compose validation"
+    Invoke-Checked {
+        docker compose -f docker-compose.yml -f docker-compose.dev.yml `
+            up -d --wait postgres redis
+    } "Infrastructure startup"
     Invoke-Checked { uv run ruff check src tests } "Ruff"
     Invoke-Checked { uv run mypy src/aibot tests } "Mypy"
     Invoke-Checked { uv run pytest --require-infrastructure } "Pytest"

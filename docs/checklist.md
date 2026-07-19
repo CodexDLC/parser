@@ -16,7 +16,13 @@
 - [x] Создан `pyproject.toml` с зависимостями проекта.
 - [x] Создан `.python-version`.
 - [x] Описан выбор runtime и зависимостей.
-- [x] Создан `docker-compose.yml` для PostgreSQL и Redis.
+- [x] Создан полный Compose stack для PostgreSQL, Redis, migrate, API, Worker и Beat.
+- [x] Добавлен multi-stage non-root production `Dockerfile`.
+- [x] Добавлены persistent volumes PostgreSQL, Redis, Beat и Telethon session.
+- [x] Миграции изолированы в one-shot `migrate` service.
+- [x] API/Worker имеют container healthchecks и dependency graph.
+- [x] PostgreSQL/Redis закрыты внутри основной Docker-сети; host-порты вынесены в dev override.
+- [x] Добавлена изолированная container acceptance-проверка.
 - [x] Зафиксирован обязательный acceptance-набор для базовой сборки.
 
 ## Backend
@@ -113,6 +119,11 @@
 ## Telegram
 
 - [x] Telethon client.
+- [x] Чтение Telegram и публикация разделены application ports.
+- [x] Telethon остаётся default publisher для соответствия Project M4.
+- [x] Добавлен выбираемый Bot API publisher без fallback.
+- [x] Bot API adapter проверяет token/target, rate limit и безопасные ошибки.
+- [x] Passive health и live-verifier учитывают выбранный publisher.
 - [x] Dry-run чтение Telegram-источника.
 - [ ] Чтение публичных каналов.
 - [ ] Публикация в целевой канал.
@@ -125,6 +136,7 @@
 - [x] Реальный OpenAI-запрос дошёл до Responses API через `codex-ai==0.2.5`.
 - [ ] Успешная реальная OpenAI-генерация — внешний blocker: API quota.
 - [ ] Real-mode Telegram verification — отсутствуют credentials, target и session.
+- [ ] Real-mode Bot API verification — отсутствуют BotFather token и test channel.
 
 ## Сдача
 

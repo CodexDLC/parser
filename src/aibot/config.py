@@ -2,6 +2,7 @@
 
 import re
 from functools import lru_cache
+from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import Field, field_validator, model_validator
@@ -50,8 +51,11 @@ class Settings(BaseSettings):
     telegram_api_id: int | None = None
     telegram_api_hash: str | None = Field(default=None, repr=False)
     telegram_session_name: str = "m4_aibot"
+    telegram_publisher: Literal["telethon", "bot_api"] = "telethon"
+    telegram_bot_token: str | None = Field(default=None, repr=False)
     telegram_target_channel: str | None = None
     telegram_dry_run: bool = True
+    telegram_timeout_seconds: float = Field(default=15.0, gt=0)
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -90,9 +94,7 @@ class Settings(BaseSettings):
             return self
         if not self.cabinet_username:
             raise ValueError("CABINET_USERNAME is required when cabinet is enabled")
-        if not self.cabinet_password_hash or not self.cabinet_password_hash.startswith(
-            "$argon2"
-        ):
+        if not self.cabinet_password_hash or not self.cabinet_password_hash.startswith("$argon2"):
             raise ValueError("CABINET_PASSWORD_HASH must contain an Argon2 hash")
         if not self.cabinet_session_secret or len(self.cabinet_session_secret) < 32:
             raise ValueError("CABINET_SESSION_SECRET must contain at least 32 characters")
@@ -108,8 +110,7 @@ class Settings(BaseSettings):
         if not languages:
             raise ValueError("NEWS_ALLOWED_LANGUAGES must contain at least one language")
         if any(
-            re.fullmatch(r"[a-z]{2,3}(?:-[a-z]{2})?", language) is None
-            for language in languages
+            re.fullmatch(r"[a-z]{2,3}(?:-[a-z]{2})?", language) is None for language in languages
         ):
             raise ValueError("NEWS_ALLOWED_LANGUAGES contains an invalid language code")
         return ",".join(languages)

@@ -1,32 +1,175 @@
+name: m4
+
+x-app-runtime: &app-runtime
+  image: "${APP_IMAGE:-m4-aibot}:${APP_IMAGE_TAG:-local}"
+  build:
+    context: .
+    dockerfile: Dockerfile
+    target: runtime
+  env_file:
+    - "${APP_ENV_FILE:-.env}"
+  environment:
+    DATABASE_URL: "${CONTAINER_DATABASE_URL:-postgresql+asyncpg://m4:m4@postgres:5432/m4}"
+    REDIS_URL: "${CONTAINER_REDIS_URL:-redis://redis:6379/0}"
+    TELEGRAM_SESSION_NAME: "${CONTAINER_TELEGRAM_SESSION_NAME:-/app/data/telegram/m4_aibot}"
+  init: true
+  read_only: true
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,size=64m
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  networks:
+    - backend
+
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: m4_postgres
     environment:
-      POSTGRES_DB: m4
-      POSTGRES_USER: m4
-      POSTGRES_PASSWORD: m4
-    ports:
-      - "5432:5432"
+      POSTGRES_DB: "${POSTGRES_DB:-m4}"
+      POSTGRES_USER: "${POSTGRES_USER:-m4}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-m4}"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U m4 -d m4"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U \"${POSTGRES_USER:-m4}\" -d \"${POSTGRES_DB:-m4}\"",
+        ]
       interval: 5s
       timeout: 3s
-      retries: 10
+      retries: 20
+    restart: unless-stopped
+    networks:
+      - backend
 
   redis:
     image: redis:7-alpine
-    container_name: m4_redis
-    ports:
-      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
-      retries: 10
+      retries: 20
+    restart: unless-stopped
+    networks:
+      - backend
+
+  migrate:
+    <<: *app-runtime
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    <<: *app-runtime
+    command:
+      [
+        "uvicorn",
+        "aibot.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+      ]
+    ports:
+      - "${API_BIND_HOST:-127.0.0.1}:${API_BIND_PORT:-8000}:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped
+    stop_grace_period: 30s
+
+  worker:
+    <<: *app-runtime
+    command:
+      [
+        "celery",
+        "-A",
+        "celery_worker.celery_app",
+        "worker",
+        "--loglevel=INFO",
+        "--concurrency=1",
+        "--hostname=worker@%h",
+      ]
+    volumes:
+      - telegram_session:/app/data/telegram
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "celery -A celery_worker.celery_app inspect ping --destination worker@$$HOSTNAME --timeout 5 | grep -q pong",
+        ]
+      interval: 20s
+      timeout: 10s
+      retries: 6
+      start_period: 20s
+    restart: unless-stopped
+    stop_grace_period: 120s
+
+  beat:
+    <<: *app-runtime
+    command:
+      [
+        "celery",
+        "-A",
+        "celery_worker.celery_app",
+        "beat",
+        "--loglevel=INFO",
+        "--schedule=/app/data/beat/celerybeat-schedule",
+      ]
+    volumes:
+      - beat_data:/app/data/beat
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: 30s
+
+  telegram-auth:
+    <<: *app-runtime
+    profiles:
+      - tools
+    command: ["python", "-m", "aibot.authorize_telegram"]
+    volumes:
+      - telegram_session:/app/data/telegram
+    stdin_open: true
+    tty: true
+    restart: "no"
+
+networks:
+  backend:
+    driver: bridge
 
 volumes:
   postgres_data:
-
+  redis_data:
+  telegram_session:
+  beat_data:

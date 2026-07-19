@@ -53,14 +53,18 @@ exception и traceback не сохраняются, потому что могу
 News остаётся `ready_for_generation` после временной AI-ошибки, чтобы Celery retry или
 повторный ручной запуск могли снова обработать её.
 
-## Telegram через Telethon
+## Telegram boundaries
 
-Telethon используется в двух местах:
+Чтение источников и публикация разделены application ports:
 
-1. Чтение публичных Telegram-каналов как источников.
-2. Публикация готовых постов в целевой канал.
+1. `TelethonChannelReader` читает публичные Telegram-каналы.
+2. `TelethonPublisher` публикует через user session и сохраняет обязательный
+   контракт исходного задания.
+3. `TelegramBotPublisher` публикует через Bot HTTP API без user session.
 
-Эти сценарии должны быть разделены в коде, даже если используют общий клиент.
+`TELEGRAM_PUBLISHER` выбирает ровно один publication adapter. Автоматического
+fallback между Telethon и Bot API нет: ошибка выбранного provider-а должна завершать
+операцию, а не создавать риск второй отправки через другой adapter.
 
 ## Telegram настройки
 
@@ -70,11 +74,23 @@ Telethon используется в двух местах:
 TELEGRAM_API_ID=
 TELEGRAM_API_HASH=
 TELEGRAM_SESSION_NAME=
+TELEGRAM_PUBLISHER=telethon
+TELEGRAM_BOT_TOKEN=
 TELEGRAM_TARGET_CHANNEL=
 TELEGRAM_DRY_RUN=true
+TELEGRAM_TIMEOUT_SECONDS=15
 ```
 
 В репозиторий нельзя коммитить реальные session-файлы и секреты.
+
+`TELEGRAM_PUBLISHER=telethon` является default и используется для демонстрации
+Project M4. `TELEGRAM_PUBLISHER=bot_api` подходит для RSS/Atom ingestion и
+односторонней публикации в собственный канал. Bot token создаётся через `@BotFather`,
+а бот получает только право публикации в target channel.
+
+Bot API не является reader-ом произвольных публичных каналов. Любой
+`Source(type="tg")` по-прежнему требует `TELEGRAM_API_ID`, `TELEGRAM_API_HASH` и
+заранее авторизованную Telethon session независимо от publication adapter.
 
 ## HTTP-клиент
 
@@ -153,7 +169,10 @@ NEWS_ALLOWED_LANGUAGES=ru,en
 
 Для Telegram сохраняется безопасный режим:
 
-- `TELEGRAM_DRY_RUN=true` - не отправлять реальные сообщения;
+- `TELEGRAM_DRY_RUN=true` - не подключать reader и не отправлять реальные сообщения;
+- Bot API token и Telethon session никогда не копируются в `ErrorLog`;
+- timeout/невалидный ответ после `sendMessage` классифицируется как неопределённый
+  результат и не получает автоматический fallback на Telethon.
 
 У AI нет runtime fake-режима: отсутствие `OPENAI_API_KEY` является ошибкой
 конфигурации. Unit, integration и acceptance-тесты внедряют test double через AI port,
@@ -170,11 +189,32 @@ NEWS_ALLOWED_LANGUAGES=ru,en
 - длину AI-ответа, число прочитанных Telegram-сообщений или ID явно запрошенной
   test-публикации.
 
-Telegram real-mode разделён на две операции:
+Telegram real-mode разделён на независимые операции:
 
 1. `python -m aibot.authorize_telegram` — явно интерактивное создание session.
-2. Worker, Beat и live-verifier — только неинтерактивное подключение уже
-   авторизованной session.
+2. `--service telegram` — проверка выбранного publisher без отправки.
+3. `--telegram-source` — дополнительная проверка Telethon reader.
+4. `--publish-telegram-test` — явная публикация через выбранный publisher.
 
-Это исключает зависание фонового процесса на запросе номера телефона или кода.
-Test-публикация выполняется только с явным `--publish-telegram-test`.
+В режиме `bot_api` publisher verification использует только безопасные `getMe` и
+`getChat`; Telethon не вызывается, если `--telegram-source` не передан. Это исключает
+зависание фонового процесса на запросе номера телефона или кода. Test-публикация
+выполняется только с явным `--publish-telegram-test`.
+
+В контейнерном runtime первичная Telethon-авторизация выполняется отдельным
+интерактивным tool-service при остановленном Worker:
+
+```powershell
+docker compose --profile tools run --rm telegram-auth
+```
+
+Session сохраняется в отдельном named volume и монтируется только в singleton Worker
+и `telegram-auth`. API и Beat не получают доступ к session-файлу. Для проверки
+интеграции из того же image Worker предварительно останавливают, чтобы не открывать
+SQLite session параллельно:
+
+```powershell
+docker compose stop worker
+docker compose run --rm worker python -m aibot.verify_integrations --service telegram
+docker compose start worker
+```

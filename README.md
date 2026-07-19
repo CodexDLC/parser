@@ -18,10 +18,12 @@ shell, dashboard, страницы сущностей, Source/Keyword CRUD, мо
 uv run python -m aibot.cabinet.credentials --username admin
 ```
 
-Команда интерактивно запрашивает пароль и выводит Argon2 hash и отдельный session
-secret. Полученные значения нужно вручную перенести в игнорируемые `.env` и
-`.env.prod`, затем установить `CABINET_ENABLED=true`. Plaintext password в файлы и
-Git не записывается. После запуска вход доступен по <http://127.0.0.1:8000/cabinet/login>.
+Команда дважды запрашивает пароль длиной не менее 12 символов и выводит Argon2 hash
+и отдельный session secret. Значения уже заключены в одинарные кавычки, чтобы Docker
+Compose не интерполировал символы `$` внутри Argon2. Полученные строки нужно вручную
+перенести в игнорируемые `.env` и `.env.prod`, затем установить
+`CABINET_ENABLED=true`. Plaintext password в файлы и Git не записывается. После
+запуска вход доступен по <http://127.0.0.1:8000/cabinet/login>.
 Календарные метрики используют IANA timezone из `CABINET_TIMEZONE`.
 Каждая тяжёлая операция кабинета создаёт persisted `PipelineRun`; повторная отправка
 той же формы не ставит вторую задачу. История мутаций доступна в разделе «Аудит».
@@ -45,6 +47,77 @@ uv run uvicorn aibot.main:app --reload
 
 - Swagger: <http://127.0.0.1:8000/docs>
 - Healthcheck: <http://127.0.0.1:8000/api/health>
+
+## Полный контейнерный стек
+
+`Dockerfile` собирает один non-root runtime image. Из него Compose запускает разные
+роли: одноразовый `migrate`, FastAPI `api`, singleton `worker` и singleton `beat`.
+PostgreSQL, Redis и Telethon session используют отдельные named volumes.
+
+Для первого локального запуска:
+
+```powershell
+Copy-Item .env.example .env
+docker compose up -d --build
+docker compose ps
+```
+
+`migrate` завершится после `alembic upgrade head`; остальные application-сервисы
+стартуют только после успешной миграции. API будет доступен на
+<http://127.0.0.1:8000>. PostgreSQL и Redis доступны application-контейнерам только
+во внутренней Docker-сети и не занимают host-порты.
+
+Основные команды:
+
+```powershell
+docker compose logs -f api worker beat
+docker compose restart api worker beat
+docker compose down
+```
+
+`docker compose down` сохраняет данные. Команда `docker compose down --volumes`
+безвозвратно удаляет PostgreSQL, Redis, Beat state и Telethon session volumes, поэтому
+её нельзя использовать на сервере без осознанного решения и резервной копии.
+
+### Production env
+
+В `.env.prod` необходимо как минимум заменить:
+
+```env
+APP_ENV_FILE=".env.prod"
+APP_IMAGE_TAG="prod"
+ENVIRONMENT="production"
+DEBUG=false
+DOCS_ENABLED=false
+
+POSTGRES_PASSWORD="случайный_пароль"
+CONTAINER_DATABASE_URL="postgresql+asyncpg://m4:URL_ENCODED_PASSWORD@postgres:5432/m4"
+```
+
+`POSTGRES_PASSWORD` и пароль внутри `CONTAINER_DATABASE_URL` должны совпадать; в URL
+зарезервированные символы необходимо percent-encode. Запуск с production-файлом:
+
+```powershell
+docker compose --env-file .env.prod up -d --build
+```
+
+Compose передаёт `.env.prod` только во время запуска: `.dockerignore` исключает
+`.env`, `.env.prod` и `*.session` из build context и image layers.
+
+### Telethon внутри Compose
+
+Первичную авторизацию выполняют до запуска Worker либо при остановленном Worker:
+
+```powershell
+docker compose up -d --build postgres redis
+docker compose --profile tools run --rm telegram-auth
+docker compose up -d
+```
+
+Интерактивная команда сохраняет session в volume `telegram_session`. Этот volume
+монтируется только в singleton Worker и `telegram-auth`; API и Beat к нему доступа не
+имеют. Worker запускается с `--concurrency=1`, чтобы один SQLite session-файл не
+использовался параллельно несколькими процессами.
 
 ## Миграции базы данных
 
@@ -117,7 +190,9 @@ uv run python -m aibot.demo
 -> Telegram dry-run publish` и печатает JSON-сводку. Сообщения в Telegram не
 отправляются, но OpenAI API вызывается.
 
-В режиме `TELEGRAM_DRY_RUN=true` Telegram parser тоже работает безопасно: вместо подключения к Telegram он возвращает demo-сообщения. Для реального чтения каналов и публикации нужно заполнить Telegram-переменные из [.env.example](.env.example) и отключить dry-run.
+В режиме `TELEGRAM_DRY_RUN=true` Telegram parser возвращает demo-сообщения, а
+выбранный publisher создаёт детерминированный `dry-run-*` ID без внешнего запроса.
+Для real-mode отдельно настраиваются Telethon reader и выбранный publisher.
 
 ## Проверки
 
@@ -145,19 +220,40 @@ Migration-тест использует отдельную временную б
 внедряемым test double, поэтому acceptance не требует ключа и не вызывает OpenAI.
 Подробный контракт описан в [docs/acceptance-tests.md](docs/acceptance-tests.md).
 
+Отдельная контейнерная проверка собирает production image и в изолированном Compose
+project проверяет миграцию, API health, non-root runtime, Worker ping и Beat:
+
+```powershell
+.\scripts\container-acceptance.ps1
+```
+
+По умолчанию временный стек и его volumes удаляются после проверки. Флаг
+`-KeepStack` оставляет их для ручной диагностики.
+
 ## Инфраструктура
 
-Локальный `docker-compose.yml` поднимает:
+`docker-compose.yml` поднимает:
 
-- PostgreSQL на `localhost:5432`, база `m4`, пользователь `m4`, пароль `m4`;
-- Redis на `localhost:6379`.
+- PostgreSQL и Redis с persistent volumes;
+- одноразовые Alembic-миграции;
+- FastAPI и административный кабинет;
+- singleton Celery Worker и Beat.
 
 Переменные окружения описаны в [.env.example](.env.example). Локальные значения
 хранятся в игнорируемом Git файле `.env`, production-шаблон с пустыми секретами —
-в игнорируемом файле `.env.prod`. Для запуска с production-файлом:
+в игнорируемом файле `.env.prod`. Локальные команды `uv run ...` продолжают работать
+и используют host URLs из `DATABASE_URL`/`REDIS_URL`; контейнеры получают отдельные
+внутренние URLs из `CONTAINER_DATABASE_URL`/`CONTAINER_REDIS_URL`.
+
+Пароль кабинета в env должен оставаться в одинарных кавычках, как его выводит
+`aibot.cabinet.credentials`. Двойные кавычки позволяют Compose ошибочно
+интерполировать части Argon2 hash после символа `$`.
+
+Для запуска локальных Python-команд и integration-тестов вне контейнеров используется
+dev override, который дополнительно открывает PostgreSQL и Redis на loopback:
 
 ```powershell
-uv run --env-file .env.prod uvicorn aibot.main:app
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres redis
 ```
 
 ## RSS/Atom источники
@@ -189,6 +285,40 @@ NEWS_ALLOWED_LANGUAGES="ru,en"
 Язык определяется по объединённому `title + summary + raw_text` до проверки ключевых
 слов. Неопределённый язык получает причину `language_unknown`, запрещённый —
 `language_not_allowed`; обе новости сохраняются со статусом `filtered_out`.
+
+## Telegram: раздельные reader и publisher
+
+Telegram ingestion и публикация являются независимыми integration boundaries:
+
+- `TelethonChannelReader` читает публичные источники `Source(type="tg")`;
+- `TelethonPublisher` сохраняет обязательную публикацию через Telethon из Project M4;
+- `TelegramBotPublisher` позволяет публиковать RSS/AI-посты через Bot API без
+  пользовательской session на сервере.
+
+Активен ровно один publisher, выбранный без автоматического fallback:
+
+```env
+TELEGRAM_PUBLISHER="telethon"
+```
+
+Это значение по умолчанию и режим демонстрации исходного задания. Для RSS → AI →
+собственный канал можно выбрать Bot API:
+
+```env
+TELEGRAM_PUBLISHER="bot_api"
+TELEGRAM_BOT_TOKEN=""
+TELEGRAM_TARGET_CHANNEL="@project_m4_test"
+TELEGRAM_DRY_RUN=false
+TELEGRAM_TIMEOUT_SECONDS=15
+```
+
+Бота создают через `@BotFather`, добавляют администратором целевого канала и выдают
+только право публикации. Token хранится только в игнорируемом `.env`/secret storage.
+Команды, webhook и обработка пользовательских сообщений проекту не нужны.
+
+Bot API не заменяет Telethon reader: если включён хотя бы один Telegram-источник,
+нужны `TELEGRAM_API_ID`, `TELEGRAM_API_HASH` и заранее авторизованная session,
+независимо от выбранного publisher.
 
 ## Примеры API-запросов
 
@@ -244,24 +374,30 @@ uv run python -m aibot.verify_integrations --service telegram
 ```
 
 Статус `blocked` и ненулевой exit code означают внешний prerequisite: например,
-отсутствующую квоту, включённый dry-run или неавторизованную Telegram session.
+отсутствующую квоту, включённый dry-run, неавторизованную Telethon session или
+неполную конфигурацию Bot API.
 
-Telegram worker никогда не запускает интерактивный login. Первичная авторизация
-выполняется отдельно после заполнения `TELEGRAM_API_ID` и `TELEGRAM_API_HASH`:
+Команда `--service telegram` проверяет publisher из `TELEGRAM_PUBLISHER`. Если передан
+`--telegram-source`, дополнительно проверяется Telethon reader и чтение одного
+сообщения. Worker никогда не запускает интерактивный login.
+
+Первичная Telethon-авторизация нужна для режима публикации `telethon` и для любых
+Telegram-источников. Она выполняется отдельно после заполнения `TELEGRAM_API_ID` и
+`TELEGRAM_API_HASH`:
 
 ```powershell
 uv run python -m aibot.authorize_telegram
 ```
 
-После авторизации нужно указать `TELEGRAM_TARGET_CHANNEL`, установить
-`TELEGRAM_DRY_RUN=false` и проверить соединение и чтение одного сообщения:
+После авторизации можно проверить чтение одного публичного источника:
 
 ```powershell
 uv run python -m aibot.verify_integrations --service telegram --telegram-source @public_channel
 ```
 
-Публикация не входит в проверку по умолчанию. Следующая команда действительно
-отправляет один маркированный тестовый пост в `TELEGRAM_TARGET_CHANNEL`:
+Публикация не входит в проверку по умолчанию. После настройки выбранного publisher,
+`TELEGRAM_TARGET_CHANNEL` и `TELEGRAM_DRY_RUN=false` следующая команда действительно
+отправляет один маркированный тестовый пост:
 
 ```powershell
 uv run python -m aibot.verify_integrations --service telegram --publish-telegram-test

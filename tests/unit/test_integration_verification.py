@@ -56,6 +56,36 @@ class FakeTelegramClient:
         return "42"
 
 
+class FailingIfCalledTelegramReader:
+    """Доказывает, что RSS + Bot API не требуют Telethon session."""
+
+    async def verify_connection(self) -> None:
+        raise AssertionError("Telethon reader must not be checked without a source")
+
+    async def read_channel_messages(
+        self,
+        _: str,
+        *,
+        limit: int = 10,
+    ) -> list[TelegramChannelMessage]:
+        raise AssertionError("Telethon reader must not be called without a source")
+
+
+class FakeTelegramPublisher:
+    """Отдельный publisher double для нового integration boundary."""
+
+    def __init__(self) -> None:
+        self.verify_calls = 0
+        self.publish_calls = 0
+
+    async def verify_connection(self) -> None:
+        self.verify_calls += 1
+
+    async def publish_message(self, _: str) -> str:
+        self.publish_calls += 1
+        return "bot-api-42"
+
+
 @pytest.mark.asyncio
 async def test_openai_live_check_returns_only_safe_success_metadata() -> None:
     """Успех не раскрывает prompt или provider response."""
@@ -79,9 +109,7 @@ async def test_openai_quota_error_is_reported_without_provider_message() -> None
 
     service = IntegrationVerificationService(
         Settings(openai_api_key="test-key"),
-        ai_client=FakeAIClient(
-            exc=AIClientRateLimitError("provider payload with request id")
-        ),
+        ai_client=FakeAIClient(exc=AIClientRateLimitError("provider payload with request id")),
         telegram_client=FakeTelegramClient(),
     )
 
@@ -126,3 +154,24 @@ async def test_telegram_live_check_can_read_and_explicitly_publish() -> None:
     assert result.status == IntegrationCheckStatus.PASSED
     assert result.messages_read == 1
     assert result.test_message_id == "42"
+
+
+@pytest.mark.asyncio
+async def test_bot_api_verification_does_not_require_telethon_without_source() -> None:
+    """Publisher verification остаётся независимой от Telegram ingestion."""
+
+    publisher = FakeTelegramPublisher()
+    service = IntegrationVerificationService(
+        Settings(telegram_publisher="bot_api", telegram_dry_run=False),
+        ai_client=FakeAIClient(),
+        telegram_reader=FailingIfCalledTelegramReader(),
+        telegram_publisher=publisher,
+    )
+
+    result = await service.verify_telegram(publish_test=True)
+
+    assert result.status == IntegrationCheckStatus.PASSED
+    assert result.messages_read is None
+    assert result.test_message_id == "bot-api-42"
+    assert publisher.verify_calls == 1
+    assert publisher.publish_calls == 1

@@ -105,6 +105,11 @@ PIPELINE_PUBLISHING_LIMIT=10
 - `Post.published_at = now`;
 - сохраняется `telegram_message_id`.
 
+Задача не знает деталей Telegram SDK. `PublishingService` получает
+`TelegramPublisherPort`, а runtime factory выбирает `telethon` или `bot_api` из
+`TELEGRAM_PUBLISHER`. Одновременно активен только один publisher; fallback после
+ошибки запрещён.
+
 ## Полный pipeline
 
 ```text

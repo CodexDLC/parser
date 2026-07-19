@@ -8,9 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from aibot.config import Settings, get_settings
 from aibot.integrations.telegram_client import TelegramClient
+from aibot.integrations.telegram_publisher_factory import build_telegram_publisher
 from aibot.models.enums import ErrorScope, PostStatus
 from aibot.models.error_log import ErrorLog
 from aibot.models.post import Post
+from aibot.ports.telegram import TelegramPublisherPort
 from aibot.repositories.error_log_repository import ErrorLogRepository
 from aibot.repositories.post_repository import PostRepository
 from aibot.services.exceptions import (
@@ -41,13 +43,18 @@ class PublishingService:
         settings: Settings | None = None,
         repository: PostRepository | None = None,
         error_log_repository: ErrorLogRepository | None = None,
+        telegram_publisher: TelegramPublisherPort | None = None,
         telegram_client: TelegramClient | None = None,
     ) -> None:
+        if telegram_publisher is not None and telegram_client is not None:
+            raise ValueError("Provide telegram_publisher or telegram_client, not both")
         self.session = session
         self.settings = settings or get_settings()
         self.repository = repository or PostRepository(session)
         self.error_log_repository = error_log_repository or ErrorLogRepository(session)
-        self.telegram_client = telegram_client or TelegramClient(self.settings)
+        self.telegram_publisher = (
+            telegram_publisher or telegram_client or build_telegram_publisher(self.settings)
+        )
 
     async def publish_post(self, post_id: uuid.UUID) -> PublishResult:
         """Опубликовать пост или выполнить dry-run публикацию."""
@@ -64,7 +71,7 @@ class PublishingService:
         await self.session.flush()
 
         try:
-            message_id = await self.telegram_client.publish_message(post.generated_text)
+            message_id = await self.telegram_publisher.publish_message(post.generated_text)
         except Exception as exc:
             await self._mark_failed(post, exc)
             raise PublishingFailedError("Telegram publication failed") from exc

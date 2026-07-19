@@ -2,7 +2,9 @@
 
 import re
 from datetime import UTC, datetime
+from io import StringIO
 
+from dotenv import dotenv_values
 from fastapi.testclient import TestClient
 
 from aibot.cabinet.auth import CabinetSession
@@ -138,7 +140,11 @@ def test_credentials_helper_never_renders_plaintext_password() -> None:
     assert credentials.username == "admin"
     assert credentials.password_hash.startswith("$argon2")
     assert verify_password(ADMIN_PASSWORD, credentials.password_hash) is True
-    assert 'CABINET_SESSION_SECRET="' in rendered
+    assert f"CABINET_PASSWORD_HASH='{credentials.password_hash}'" in rendered
+    assert "CABINET_SESSION_SECRET='ssss" in rendered
+    parsed = dotenv_values(stream=StringIO(rendered))
+    assert parsed["CABINET_PASSWORD_HASH"] == credentials.password_hash
+    assert parsed["CABINET_SESSION_SECRET"] == credentials.session_secret
 
 
 def test_custom_cabinet_mount_path_is_used_by_login_form() -> None:
@@ -196,6 +202,25 @@ def test_login_rotates_session_and_opens_library_shell() -> None:
     assert len(store.sessions) == 1
     set_cookie = client.cookies.get("m4_cabinet_session")
     assert set_cookie is not None
+
+
+def test_overview_renders_dashboard_sidebar() -> None:
+    """Overview занимает content-колонку благодаря настоящему sidebar."""
+
+    application = create_app(
+        settings=cabinet_settings(),
+        cabinet_security_store=MemoryCabinetSecurityStore(),
+        cabinet_dashboard_service=EmptyDashboardService(),
+    )
+    client = TestClient(application)
+
+    login(client)
+    response = client.get("/cabinet/overview")
+
+    assert response.status_code == 200
+    assert '<aside class="fc-sidebar"' in response.text
+    assert 'href="/cabinet/overview/"' in response.text
+    assert "Дашборд" in response.text
 
 
 def test_production_session_cookie_is_secure_and_httponly() -> None:

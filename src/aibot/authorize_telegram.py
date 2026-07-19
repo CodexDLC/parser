@@ -4,14 +4,15 @@ import asyncio
 import json
 
 from aibot.config import Settings
-from aibot.integrations.telegram_client import TelegramClient, TelegramClientError
+from aibot.integrations.telegram_common import TelegramClientError
+from aibot.integrations.telethon_session import TelethonSession
 
 
 async def authorize() -> int:
     """Создать или обновить session без вывода credentials и account details."""
 
     try:
-        await TelegramClient(Settings()).authorize_session()
+        await TelethonSession(Settings()).authorize()
     except TelegramClientError as exc:
         print(
             json.dumps(

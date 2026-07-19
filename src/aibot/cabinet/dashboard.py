@@ -149,15 +149,9 @@ class PassiveHealthService:
 
         redis_available = await self._redis_available()
         telegram_status = "dry-run" if self._settings.telegram_dry_run else "настроен"
-        if (
-            not self._settings.telegram_dry_run
-            and (
-                self._settings.telegram_api_id is None
-                or not self._settings.telegram_api_hash
-                or not self._settings.telegram_target_channel
-            )
-        ):
+        if not self._settings.telegram_dry_run and not self._telegram_configured():
             telegram_status = "не настроен"
+        telegram_detail = f"publisher={self._settings.telegram_publisher}; без отправки сообщений"
 
         return (
             HealthCheck(
@@ -178,7 +172,7 @@ class PassiveHealthService:
             HealthCheck(
                 service="Telegram",
                 status=telegram_status,
-                detail="без отправки сообщений",
+                detail=telegram_detail,
             ),
             HealthCheck(
                 service="Celery",
@@ -191,6 +185,15 @@ class PassiveHealthService:
                 detail="расписание настроено",
             ),
         )
+
+    def _telegram_configured(self) -> bool:
+        """Проверить только настройки выбранного publisher без внешнего вызова."""
+
+        if not self._settings.telegram_target_channel:
+            return False
+        if self._settings.telegram_publisher == "bot_api":
+            return bool(self._settings.telegram_bot_token)
+        return bool(self._settings.telegram_api_id and self._settings.telegram_api_hash)
 
     async def _redis_available(self) -> bool:
         now = time.monotonic()

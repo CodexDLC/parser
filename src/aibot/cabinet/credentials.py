@@ -38,15 +38,22 @@ def build_credentials(
 
 
 def render_env(credentials: CabinetCredentials) -> str:
-    """Сформировать строки для ручного переноса в ignored env-файл."""
+    """Сформировать Compose-safe строки для переноса в ignored env-файл."""
 
     return "\n".join(
         (
-            f'CABINET_USERNAME="{credentials.username}"',
-            f'CABINET_PASSWORD_HASH="{credentials.password_hash}"',
-            f'CABINET_SESSION_SECRET="{credentials.session_secret}"',
+            f"CABINET_USERNAME={_quote_env_literal(credentials.username)}",
+            f"CABINET_PASSWORD_HASH={_quote_env_literal(credentials.password_hash)}",
+            f"CABINET_SESSION_SECRET={_quote_env_literal(credentials.session_secret)}",
         )
     )
+
+
+def _quote_env_literal(value: str) -> str:
+    """Защитить `$` и кавычки от Docker Compose interpolation."""
+
+    escaped = value.replace("\\", "\\\\").replace("'", "\\'")
+    return f"'{escaped}'"
 
 
 def main() -> int:

@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import Request
 from fastapi_cabinet import CabinetAdmin
+from fastapi_cabinet.contracts.navigation import SidebarItem
 from fastapi_cabinet.contracts.widgets import (
     ChartDatasetMap,
     ChartWidget,
@@ -256,6 +257,16 @@ class OverviewAdmin(CabinetAdmin):
     icon = "▦"
     order = 10
     permission = "cabinet.view"
+    sidebar = (
+        SidebarItem(
+            key="dashboard",
+            label="Дашборд",
+            path="",
+            icon="▦",
+            order=10,
+            permission="cabinet.view",
+        ),
+    )
     dashboard_widgets = (
         MetricWidget(
             key="active_sources",

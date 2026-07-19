@@ -33,6 +33,11 @@ Before integration changes, read:
 ## Telegram Rules
 
 - Separate reading source channels from publishing to the target channel.
+- Keep Telethon reader and Telethon publisher for the required Project M4 contract.
+- Allow `TELEGRAM_PUBLISHER=bot_api` as an explicit alternative for publication only.
+- Select exactly one publisher through the factory; never fall back between Telegram
+  adapters after an error.
+- Bot API publication must not require a Telethon session unless a `tg` source is read.
 - Protect against duplicate publishing.
 - Store `telegram_message_id` after successful publication.
 - Support `TELEGRAM_DRY_RUN=true`.
