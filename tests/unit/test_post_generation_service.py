@@ -128,7 +128,7 @@ async def test_generate_post_from_news_saves_generated_post() -> None:
     service = PostGenerationService(
         session,  # type: ignore[arg-type]
         settings=Settings(),
-        ai_client=FakeAIClient(),  # type: ignore[arg-type]
+        ai_client=FakeAIClient(),
         news_repository=FakeNewsRepository(news_item),  # type: ignore[arg-type]
         post_repository=post_repository,  # type: ignore[arg-type]
     )
@@ -137,7 +137,11 @@ async def test_generate_post_from_news_saves_generated_post() -> None:
 
     assert post.status == PostStatus.GENERATED
     assert post.news_id == news_item.id
-    assert "Python release" in post.generated_text
+    assert post.generated_text == (
+        "Generated: Python release Python got faster. Runtime performance update\n\n"
+        "🔗 Источник:\n"
+        "https://example.com/python"
+    )
     assert news_item.status == NewsStatus.GENERATED
     assert post_repository.saved == [post]
     assert session.commits == 1
@@ -152,7 +156,7 @@ async def test_generate_post_from_news_rejects_filtered_news() -> None:
     service = PostGenerationService(
         FakeSession(),  # type: ignore[arg-type]
         settings=Settings(),
-        ai_client=FakeAIClient(),  # type: ignore[arg-type]
+        ai_client=FakeAIClient(),
         news_repository=FakeNewsRepository(news_item),  # type: ignore[arg-type]
         post_repository=FakePostRepository(),  # type: ignore[arg-type]
     )
@@ -171,7 +175,7 @@ async def test_generate_post_logs_ai_error_without_secret_and_preserves_type() -
     service = PostGenerationService(
         session,  # type: ignore[arg-type]
         settings=Settings(),
-        ai_client=FailingAIClient(),  # type: ignore[arg-type]
+        ai_client=FailingAIClient(),
         news_repository=FakeNewsRepository(news_item),  # type: ignore[arg-type]
         post_repository=FakePostRepository(),  # type: ignore[arg-type]
         error_log_repository=error_log_repository,  # type: ignore[arg-type]
@@ -201,7 +205,7 @@ async def test_generate_post_rejects_concurrent_worker_before_ai_call() -> None:
     service = PostGenerationService(
         FakeSession(),  # type: ignore[arg-type]
         settings=Settings(),
-        ai_client=ai_client,  # type: ignore[arg-type]
+        ai_client=ai_client,
         news_repository=LockedNewsRepository(news_item),  # type: ignore[arg-type]
         post_repository=post_repository,  # type: ignore[arg-type]
     )

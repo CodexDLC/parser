@@ -1,4 +1,4 @@
-"""Адаптер codex-ai для генерации Telegram-постов через OpenAI Responses API."""
+"""Стабильный M4-адаптер поверх выбранной codex-ai provider chain."""
 
 from typing import NoReturn
 
@@ -10,12 +10,19 @@ from codex_ai import (
 )
 
 from aibot.config import Settings
+from aibot.integrations.ai_response_validator import (
+    AIResponseValidationError,
+    PlainTextTelegramPostValidator,
+)
 
 SYSTEM_PROMPT = (
-    "Сделай краткое, интересное описание новости для Telegram-канала. "
-    "Добавь 1-3 emoji, сохрани факты, не выдумывай подробности. "
-    "В конце добавь короткий call to action. "
-    "Текст должен быть на русском языке и не длиннее 900 символов."
+    "Подготовь законченный информационный пост для русскоязычного Telegram-канала. "
+    "Сохрани факты исходной новости и не выдумывай подробности. Добавь 1-3 уместных "
+    "emoji, короткий заголовок, 2-3 небольших абзаца и короткий призыв ознакомиться "
+    "с темой. Объём готового текста — 350-700 символов, абсолютный максимум — "
+    "900 символов. Верни только обычный текст без Markdown, HTML, звёздочек, "
+    "обратных кавычек и служебных пояснений. Обязательно закончи последнее "
+    "предложение знаком точки, вопроса, восклицания или многоточием."
 )
 
 
@@ -47,9 +54,23 @@ class AIClient:
         settings: Settings,
         *,
         provider: TextGenerationProvider | None = None,
+        fallback_provider: TextGenerationProvider | None = None,
+        response_validator: PlainTextTelegramPostValidator | None = None,
     ) -> None:
         self.settings = settings
+        if provider is None and fallback_provider is not None:
+            raise ValueError("fallback_provider requires provider")
+        if provider is not None and fallback_provider is not None:
+            from aibot.integrations.ai_fallback_provider import FallbackTextProvider
+
+            provider = FallbackTextProvider(
+                primary=provider,
+                fallback=fallback_provider,
+                primary_name=settings.ai_provider,
+                fallback_name=settings.ai_fallback_provider or "fallback",
+            )
         self._provider = provider
+        self._response_validator = response_validator or PlainTextTelegramPostValidator()
 
     async def generate_telegram_post(self, input_text: str) -> str:
         """Сгенерировать Telegram-пост через настроенный codex-ai provider."""
@@ -57,37 +78,35 @@ class AIClient:
         compact_text = " ".join(input_text.split())
         if not compact_text:
             raise AIClientInvalidResponseError("Input text is empty")
-        if self._provider is None and not self.settings.openai_api_key:
-            raise AIClientAuthenticationError("OPENAI_API_KEY is not configured")
+        try:
+            provider = self._provider or self._build_provider()
+        except Exception as exc:
+            from aibot.integrations.ai_provider_factory import AIProviderConfigurationError
 
-        provider = self._provider or self._build_provider()
+            if isinstance(exc, AIProviderConfigurationError):
+                raise AIClientAuthenticationError(str(exc)) from exc
+            raise
         prompt = PromptResult(
             messages=[LLMMessage(role="user", content=compact_text)],
             system=SYSTEM_PROMPT,
-            max_tokens=450,
+            max_tokens=self.settings.ai_max_output_tokens,
         )
         try:
             generated_text = await provider.generate_text(prompt)
         except LLMProviderError as exc:
             self._raise_mapped_error(exc)
 
-        if not generated_text or not generated_text.strip():
-            raise AIClientInvalidResponseError("AI provider returned empty response")
-        return generated_text.strip()
+        try:
+            return self._response_validator.validate(generated_text)
+        except AIResponseValidationError as exc:
+            raise AIClientInvalidResponseError(str(exc)) from exc
 
     def _build_provider(self) -> TextGenerationProvider:
-        """Лениво создать OpenAI provider с retry-политикой, принадлежащей Celery."""
+        """Лениво создать primary/fallback provider chain из runtime settings."""
 
-        from codex_ai.providers.openai import OpenAIProvider
+        from aibot.integrations.ai_provider_factory import build_text_provider
 
-        return OpenAIProvider(
-            api_key=self.settings.openai_api_key,
-            model=self.settings.openai_model,
-            reasoning_effort="none",
-            store=False,
-            timeout=self.settings.openai_timeout_seconds,
-            max_retries=0,
-        )
+        return build_text_provider(self.settings)
 
     @staticmethod
     def _raise_mapped_error(exc: LLMProviderError) -> NoReturn:
@@ -96,10 +115,30 @@ class AIClient:
         cause = exc.__cause__
         error_name = cause.__class__.__name__ if cause is not None else exc.__class__.__name__
         message = str(exc) or error_name
-        if error_name == "RateLimitError":
+        status_code = getattr(cause, "status_code", None)
+        normalized_message = message.lower()
+        if (
+            error_name == "RateLimitError"
+            or status_code == 429
+            or "resource_exhausted" in normalized_message
+        ):
             raise AIClientRateLimitError(message) from exc
-        if error_name in {"APITimeoutError", "ConnectTimeout", "ReadTimeout"}:
+        if error_name in {
+            "APITimeoutError",
+            "ConnectTimeout",
+            "ReadTimeout",
+            "TimeoutError",
+            "TimeoutException",
+        }:
             raise AIClientTimeoutError(message) from exc
-        if error_name in {"AuthenticationError", "OpenAIError"} and "api key" in message.lower():
+        if (
+            status_code in {401, 403}
+            or "api_key_invalid" in normalized_message
+            or "api key not valid" in normalized_message
+            or (
+                error_name in {"AuthenticationError", "OpenAIError"}
+                and "api key" in normalized_message
+            )
+        ):
             raise AIClientAuthenticationError(message) from exc
         raise AIClientError(message) from exc

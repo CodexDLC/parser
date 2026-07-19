@@ -236,6 +236,7 @@ def _settings() -> Settings:
             "cabinet_password_hash": hash_password(ADMIN_PASSWORD),
             "cabinet_session_secret": "test-session-secret-with-at-least-32-bytes",
             "debug": False,
+            "telegram_dry_run": True,
         }
     )
 

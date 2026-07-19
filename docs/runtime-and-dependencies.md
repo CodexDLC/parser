@@ -41,7 +41,7 @@ requires-python = ">=3.12,<3.13"
 Read-only dashboard работает через SQLAlchemy repository напрямую, без HTTP к
 собственному API. Метрики и таблицы загружаются одним request-scoped snapshot:
 один агрегирующий запрос, две группировки и две ограниченные последние выборки.
-Passive health выполняет только cached Redis PING; OpenAI, Telegram и Celery
+Passive health выполняет только cached Redis PING; AI provider-ы, Telegram и Celery
 worker на открытии кабинета не вызываются.
 
 Operational кабинет хранит `PipelineRun` и `AdminAuditLog` в PostgreSQL. Celery hooks
@@ -68,8 +68,9 @@ boundary и PostgreSQL row lock; публикация удерживает Post 
   для демонстрации Project M4.
 - `httpx` - также используется отдельным Bot API publisher для исходящей публикации
   без пользовательской Telegram session.
-- `codex-ai[openai]==0.2.5` - единый AI provider; OpenAI-интеграция работает через
-  Responses API и `gpt-5.6-terra`.
+- `codex-ai[openai,gemini]==0.2.5` - единая граница AI provider-ов; OpenAI работает
+  через Responses API и `gpt-5.6-terra`, Gemini fallback — через
+  `gemini-3.5-flash`.
 - `tenacity` - retry/backoff для внешних API.
 
 ### Parsing

@@ -38,9 +38,14 @@ class Settings(BaseSettings):
     pipeline_reconciliation_interval_seconds: int = Field(default=10 * 60, ge=60)
     pipeline_run_stale_after_seconds: int = Field(default=2 * 60 * 60, ge=60)
 
+    ai_provider: Literal["openai", "gemini"] = "openai"
+    ai_fallback_provider: Literal["openai", "gemini"] | None = "gemini"
     openai_api_key: str | None = Field(default=None, repr=False)
     openai_model: str = "gpt-5.6-terra"
     openai_timeout_seconds: float = 60.0
+    gemini_api_key: str | None = Field(default=None, repr=False)
+    gemini_model: str = "gemini-3.5-flash"
+    ai_max_output_tokens: int = Field(default=2048, ge=512, le=8192)
 
     http_timeout_seconds: float = 15.0
     http_max_response_bytes: int = 2_000_000
@@ -132,6 +137,13 @@ class Settings(BaseSettings):
         """Вернуть разрешённые языки как неизменяемое множество."""
 
         return frozenset(self.news_allowed_languages.split(","))
+
+    def ai_provider_configured(self, provider_name: Literal["openai", "gemini"]) -> bool:
+        """Проверить наличие credentials без раскрытия значения ключа."""
+
+        if provider_name == "openai":
+            return bool(self.openai_api_key)
+        return bool(self.gemini_api_key)
 
     @property
     def cabinet_cookie_secure(self) -> bool:

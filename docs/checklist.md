@@ -95,6 +95,11 @@
 - [x] Обработка rate limit.
 - [x] Обработка timeout.
 - [x] Внедряемый AI test double для тестов без runtime fake-режима.
+- [x] OpenAI/Gemini выбираются через env без изменения доменных сервисов.
+- [x] Gemini используется как последовательный fallback после ошибки OpenAI.
+- [x] AI output budget учитывает reasoning-токены provider-а.
+- [x] Оборванный/короткий/размеченный AI-ответ блокируется до сохранения Post.
+- [x] Исходный NewsItem URL детерминированно добавляется после AI-валидации.
 - [x] Сохранение сгенерированного поста.
 - [x] Безопасный `ErrorLog(scope="ai")` с привязкой к новости.
 - [x] PostgreSQL row lock против конкурентной генерации.
@@ -126,7 +131,7 @@
 - [x] Passive health и live-verifier учитывают выбранный publisher.
 - [x] Dry-run чтение Telegram-источника.
 - [ ] Чтение публичных каналов.
-- [ ] Публикация в целевой канал.
+- [x] Публикация в целевой тестовый канал через Telethon.
 - [x] Защита от повторной публикации.
 - [x] Логирование ошибок публикации.
 - [x] `TELEGRAM_DRY_RUN`.
@@ -135,7 +140,8 @@
 - [x] Добавлен безопасный live-verifier OpenAI/Telegram.
 - [x] Реальный OpenAI-запрос дошёл до Responses API через `codex-ai==0.2.5`.
 - [ ] Успешная реальная OpenAI-генерация — внешний blocker: API quota.
-- [ ] Real-mode Telegram verification — отсутствуют credentials, target и session.
+- [x] Реальная Gemini-генерация через fallback и `gemini-3.5-flash`.
+- [x] Real-mode Telegram verification — session, target и тестовая отправка проверены.
 - [ ] Real-mode Bot API verification — отсутствуют BotFather token и test channel.
 
 ## Сдача

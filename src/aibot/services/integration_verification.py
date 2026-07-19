@@ -19,6 +19,7 @@ from aibot.integrations.telegram_common import (
 )
 from aibot.integrations.telegram_publisher_factory import build_telegram_publisher
 from aibot.integrations.telethon_reader import TelethonChannelReader
+from aibot.ports.ai import AIClientPort
 from aibot.ports.telegram import TelegramPublisherPort, TelegramSourceReaderPort
 
 OPENAI_VERIFICATION_INPUT = (
@@ -48,13 +49,6 @@ class IntegrationCheckResult:
     response_length: int | None = None
     messages_read: int | None = None
     test_message_id: str | None = None
-
-
-class AIClientPort(Protocol):
-    """Минимальный AI port для operational verification."""
-
-    async def generate_telegram_post(self, input_text: str) -> str:
-        """Сгенерировать Telegram-пост."""
 
 
 class TelegramClientPort(Protocol):

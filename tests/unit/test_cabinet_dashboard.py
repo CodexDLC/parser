@@ -115,6 +115,7 @@ def dashboard_settings() -> Settings:
             "cabinet_session_secret": "test-session-secret-with-at-least-32-bytes",
             "cabinet_timezone": "Europe/Berlin",
             "openai_api_key": "configured-but-must-not-be-called",
+            "gemini_api_key": "configured-but-must-not-be-called",
             "telegram_api_id": 123,
             "telegram_api_hash": "configured-but-must-not-be-called",
             "telegram_target_channel": "@project_m4",
@@ -172,7 +173,7 @@ def test_dashboard_renders_all_widgets_from_one_request_snapshot() -> None:
 
 
 async def test_passive_health_is_cached_and_does_not_probe_external_providers() -> None:
-    """Health вызывает только Redis PING и описывает OpenAI/Telegram по config."""
+    """Health вызывает только Redis PING и описывает AI/Telegram по config."""
 
     probe = CountingRedisProbe()
     service = PassiveHealthService(
@@ -189,7 +190,8 @@ async def test_passive_health_is_cached_and_does_not_probe_external_providers() 
     health = {item.service: item for item in first}
     assert health["PostgreSQL"].status == "доступен"
     assert health["Redis"].status == "доступен"
-    assert health["OpenAI"].detail == "без сетевой проверки"
+    assert health["AI"].status == "настроен"
+    assert health["AI"].detail == "primary=openai; fallback=gemini; без сетевой проверки"
     assert health["Telegram"].status == "dry-run"
     assert health["Celery"].detail == "без опроса worker"
     assert health["Beat"].detail == "расписание настроено"

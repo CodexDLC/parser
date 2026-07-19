@@ -10,6 +10,7 @@ from aibot.models.enums import ErrorScope, NewsStatus, PostStatus
 from aibot.models.error_log import ErrorLog
 from aibot.models.news_item import NewsItem
 from aibot.models.post import Post
+from aibot.ports.ai import AIClientPort
 from aibot.repositories.error_log_repository import ErrorLogRepository
 from aibot.repositories.news_repository import NewsRepository
 from aibot.repositories.post_repository import PostRepository
@@ -18,6 +19,7 @@ from aibot.services.exceptions import (
     EntityNotFoundError,
     InvalidNewsStateError,
 )
+from aibot.services.telegram_post_composer import TelegramPostComposer
 
 
 class PostGenerationService:
@@ -28,10 +30,11 @@ class PostGenerationService:
         session: AsyncSession | None = None,
         *,
         settings: Settings | None = None,
-        ai_client: AIClient | None = None,
+        ai_client: AIClientPort | None = None,
         news_repository: NewsRepository | None = None,
         post_repository: PostRepository | None = None,
         error_log_repository: ErrorLogRepository | None = None,
+        post_composer: TelegramPostComposer | None = None,
     ) -> None:
         self.session = session
         self.settings = settings or get_settings()
@@ -45,6 +48,7 @@ class PostGenerationService:
         self.error_log_repository = error_log_repository or (
             ErrorLogRepository(session) if session is not None else None
         )
+        self.post_composer = post_composer or TelegramPostComposer()
 
     async def generate_manual_post(
         self,
@@ -67,9 +71,13 @@ class PostGenerationService:
             raise RuntimeError("Database session is required to generate a post from news")
 
         news_item = await self._get_locked_generation_candidate(news_id)
-        generated_text = await self.generate_manual_post(
+        generated_body = await self.generate_manual_post(
             news_item.text_for_generation,
             news_id=news_item.id,
+        )
+        generated_text = self.post_composer.compose(
+            generated_body,
+            source_url=news_item.url,
         )
         post = await self.post_repository.add(
             Post(

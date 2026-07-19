@@ -17,21 +17,35 @@
 uv run python -m aibot.verify_integrations --service openai
 ```
 
+После этой проверки runtime расширен Gemini fallback без удаления OpenAI:
+
+- `AI_PROVIDER=openai`;
+- `AI_FALLBACK_PROVIDER=gemini`;
+- Gemini model по умолчанию — `gemini-3.5-flash`;
+- `GEMINI_API_KEY` присутствует; значение не выводилось и не сохранялось в отчёт;
+- после OpenAI `429 insufficient_quota` fallback получил Gemini `200 OK`;
+- создан Post со статусом `generated`, а связанная NewsItem переведена в `generated`.
+- после обнаружения усечённых reasoning-ответов output budget увеличен до 2048;
+- короткий, незавершённый или размеченный AI-ответ теперь блокируется до сохранения;
+- реальный Gemini preview повторно проверен: 722 символа, plain text и исходная
+  HTTP(S)-ссылка из `NewsItem.url`.
+
+Имя `--service openai` сохранено для совместимости verifier CLI, но команда проходит
+через общую AI chain.
+
 ## Telegram
 
-Текущая локальная конфигурация:
+Локальная real-mode проверка выполнена:
 
-- `TELEGRAM_DRY_RUN=true`;
-- `TELEGRAM_PUBLISHER=telethon` по умолчанию;
-- `TELEGRAM_API_ID` не настроен;
-- `TELEGRAM_API_HASH` не настроен;
-- `TELEGRAM_TARGET_CHANNEL` не настроен;
-- авторизованная Telethon session отсутствует.
+- `TELEGRAM_PUBLISHER=telethon`;
+- `TELEGRAM_DRY_RUN=false`;
+- API credentials и target channel настроены без сохранения значений в отчёте;
+- Telethon session авторизована и хранится в отдельном Compose volume;
+- verifier успешно отправил одно контрольное сообщение;
+- полный pipeline успешно выполнил реальные публикации и сохранил message ID.
 
-Поэтому реальное чтение и публикация не выполнялись. Dry-run чтение и публикация
-покрыты автоматическими тестами. Production client переведён на неинтерактивное
-подключение: worker не запрашивает телефон или код и возвращает типизированную ошибку,
-если session не авторизована.
+Worker использует session неинтерактивно и не запрашивает телефон или код. Dry-run
+чтение и публикация дополнительно покрыты автоматическими тестами.
 
 После этой проверки integration boundary расширена без отмены исходного контракта:
 
@@ -46,7 +60,7 @@ uv run python -m aibot.verify_integrations --service openai
 Реальный Bot API вызов ещё не выполнялся: BotFather token и тестовый канал не
 предоставлены. Этот пункт остаётся внешним prerequisite, а не считается пройденным.
 
-После заполнения настроек:
+Повторная ручная проверка:
 
 ```powershell
 uv run python -m aibot.authorize_telegram

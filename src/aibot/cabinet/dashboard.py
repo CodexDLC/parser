@@ -164,11 +164,7 @@ class PassiveHealthService:
                 status="доступен" if redis_available else "недоступен",
                 detail="cached PING",
             ),
-            HealthCheck(
-                service="OpenAI",
-                status="настроен" if self._settings.openai_api_key else "не настроен",
-                detail="без сетевой проверки",
-            ),
+            self._ai_health(),
             HealthCheck(
                 service="Telegram",
                 status=telegram_status,
@@ -194,6 +190,23 @@ class PassiveHealthService:
         if self._settings.telegram_publisher == "bot_api":
             return bool(self._settings.telegram_bot_token)
         return bool(self._settings.telegram_api_id and self._settings.telegram_api_hash)
+
+    def _ai_health(self) -> HealthCheck:
+        """Описать primary/fallback chain только по безопасным config metadata."""
+
+        primary = self._settings.ai_provider
+        fallback = self._settings.ai_fallback_provider
+        configured = self._settings.ai_provider_configured(primary)
+        fallback_detail = "none"
+        if fallback is not None and fallback != primary:
+            fallback_configured = self._settings.ai_provider_configured(fallback)
+            configured = configured or fallback_configured
+            fallback_detail = fallback if fallback_configured else f"{fallback} (не настроен)"
+        return HealthCheck(
+            service="AI",
+            status="настроен" if configured else "не настроен",
+            detail=f"primary={primary}; fallback={fallback_detail}; без сетевой проверки",
+        )
 
     async def _redis_available(self) -> bool:
         now = time.monotonic()

@@ -189,6 +189,17 @@ Repository не должен вызывать AI, Telegram или Celery.
 
 Внешние ошибки нужно превращать в понятные исключения или результат со статусом ошибки.
 
+AI integration использует `AIClientPort`. `ai_provider_factory` собирает настроенный
+primary provider и optional fallback provider, а `FallbackTextProvider` отвечает
+только за последовательное переключение после ошибки. Сервисы генерации не знают,
+был ли ответ получен от OpenAI или Gemini.
+
+`PlainTextTelegramPostValidator` находится на AI adapter boundary и не позволяет
+сохранить оборванный, слишком короткий, чрезмерно длинный либо содержащий
+Markdown/HTML ответ. Telegram publisher получает только завершённый plain text.
+Application-сервис `TelegramPostComposer` затем добавляет к нему проверенный
+HTTP(S)-адрес из `NewsItem.url`; модель не участвует в формировании ссылки.
+
 Telegram integration разделена на независимые adapters. `TelethonChannelReader`
 обслуживает только `Source(type="tg")`; публикация проходит через
 `TelegramPublisherPort`, для которого доступны `TelethonPublisher` и

@@ -2,9 +2,20 @@
 
 ## AI API
 
-AI-интеграция должна быть изолирована в `src/aibot/integrations/ai_client.py`.
-Единственный runtime provider — `codex-ai[openai]==0.2.5`, модель передаётся через
-`OPENAI_MODEL` и по умолчанию равна `gpt-5.6-terra`.
+AI-интеграция изолирована в `src/aibot/integrations/`. Runtime использует
+`codex-ai[openai,gemini]==0.2.5`. `AI_PROVIDER` задаёт основной provider,
+`AI_FALLBACK_PROVIDER` — резервный. По умолчанию цепочка равна
+`openai -> gemini`.
+
+OpenAI читает `OPENAI_API_KEY`, `OPENAI_MODEL` (`gpt-5.6-terra`) и
+`OPENAI_TIMEOUT_SECONDS`. Gemini читает `GEMINI_API_KEY` и `GEMINI_MODEL`
+(`gemini-3.5-flash`). Общий `AI_MAX_OUTPUT_TOKENS=2048` оставляет reasoning-модели
+достаточный budget для формирования законченного ответа.
+
+`ai_provider_factory.py` строит только provider-ы с настроенными credentials.
+`ai_fallback_provider.py` вызывает Gemini после `LLMProviderError` OpenAI, но никогда
+не вызывает fallback после успешного primary-ответа. Если primary key отсутствует,
+а fallback key заполнен, используется единственный настроенный provider.
 
 Доменный сервис не должен знать детали конкретного SDK. Он должен вызывать метод уровня:
 
@@ -17,18 +28,29 @@ generate_telegram_post(input_text: str) -> str
 Базовый prompt:
 
 ```text
-Сделай краткое, интересное описание новости для Telegram-канала.
-Добавь 1-3 emoji, сохрани факты, не выдумывай подробности.
-В конце добавь короткий call to action.
-Текст должен быть на русском языке и не длиннее 900 символов.
+Подготовь законченный информационный пост для русскоязычного Telegram-канала.
+Сохрани факты и не выдумывай подробности.
+Добавь 1-3 emoji, короткий заголовок, 2-3 абзаца и короткий призыв.
+Верни 350-700 символов обычного текста без Markdown/HTML.
+Обязательно закончи последнее предложение знаком пунктуации.
 ```
 
 Правила:
 
-- не отправлять пустой текст;
+- не отправлять пустой или короче 180 символов текст;
 - не просить модель публиковать непроверенные факты;
-- ограничивать длину результата;
+- отклонять ответы длиннее 900 символов, с Markdown/HTML или незавершённой фразой;
 - сохранять ссылку на источник отдельно, а не заставлять модель придумывать ссылку.
+
+`PlainTextTelegramPostValidator` применяется на AI integration boundary до создания
+`Post`. Невалидный ответ преобразуется в `AIClientInvalidResponseError`, записывается
+как AI failure и не достигает Telegram.
+
+После валидации `TelegramPostComposer` формирует сохранённый `Post.generated_text`:
+к AI-тексту добавляется блок `🔗 Источник` с исходным `NewsItem.url`. Принимаются
+только абсолютные HTTP(S)-адреса; при отсутствующей или неподдерживаемой ссылке
+сохраняется только AI-текст. Поэтому preview кабинета полностью совпадает с будущим
+сообщением Telegram.
 
 ## Ошибки AI
 
@@ -44,6 +66,10 @@ generate_telegram_post(input_text: str) -> str
 
 - записать `ErrorLog(scope="ai")`;
 - не публиковать пост.
+
+Успешный fallback считается успешной генерацией и не создаёт `ErrorLog`. Ошибка
+передаётся сервису и Celery только после того, как доступная provider chain не смогла
+вернуть результат.
 
 `PostGenerationService` сохраняет `news_id`, короткое сообщение
 `AI generation failed` и только имя класса исключения в `details`. Текст provider
@@ -174,9 +200,9 @@ NEWS_ALLOWED_LANGUAGES=ru,en
 - timeout/невалидный ответ после `sendMessage` классифицируется как неопределённый
   результат и не получает автоматический fallback на Telethon.
 
-У AI нет runtime fake-режима: отсутствие `OPENAI_API_KEY` является ошибкой
-конфигурации. Unit, integration и acceptance-тесты внедряют test double через AI port,
-поэтому не выполняют внешних запросов и не расходуют токены.
+У AI нет runtime fake-режима: отсутствие credentials у всех выбранных provider-ов
+является ошибкой конфигурации. Unit, integration и acceptance-тесты внедряют test
+double через AI port, поэтому не выполняют внешних запросов и не расходуют токены.
 
 ## Operational verification
 

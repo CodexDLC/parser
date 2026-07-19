@@ -18,6 +18,7 @@ from aibot.services.exceptions import (
 )
 from aibot.services.publishing import PublishingService
 from aibot.tasks.celery_app import celery_app
+from aibot.tasks.celery_app import settings as runtime_settings
 from aibot.tasks.filtering import filter_news
 from aibot.tasks.generation import generate_post, generate_text
 from aibot.tasks.maintenance import reconcile_pipeline_runs
@@ -226,16 +227,19 @@ def test_beat_schedules_full_pipeline_with_runtime_limits() -> None:
     }
     entry = schedule["run-full-pipeline-every-30-minutes"]
     assert entry["task"] == run_pipeline.name
-    assert entry["schedule"] == 30 * 60
+    assert entry["schedule"] == runtime_settings.pipeline_interval_seconds
     assert entry["kwargs"] == {
-        "parse_limit": 10,
-        "generation_limit": 10,
-        "publishing_limit": 10,
+        "parse_limit": runtime_settings.pipeline_parse_limit,
+        "generation_limit": runtime_settings.pipeline_generation_limit,
+        "publishing_limit": runtime_settings.pipeline_publishing_limit,
     }
     assert entry["task"] != parse_enabled_sources.name
     reconciliation = schedule["reconcile-pipeline-runs"]
     assert reconciliation["task"] == reconcile_pipeline_runs.name
-    assert reconciliation["schedule"] == 10 * 60
+    assert (
+        reconciliation["schedule"]
+        == runtime_settings.pipeline_reconciliation_interval_seconds
+    )
 
 
 def test_generation_task_contract_uses_injected_ai(

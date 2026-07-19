@@ -1,6 +1,6 @@
 ---
 name: m4-integrations
-description: External integration rules for Project M4. Use when creating or editing OpenAI-compatible AI generation, Telethon Telegram parsing or publishing, website parsers, external API clients, prompts, dry-run modes, secrets handling, or integration error handling.
+description: External integration rules for Project M4. Use when creating or editing OpenAI/Gemini AI generation, Telethon Telegram parsing or publishing, website parsers, external API clients, prompts, dry-run modes, secrets handling, or integration error handling.
 ---
 
 # M4 Integrations
@@ -23,8 +23,12 @@ Before integration changes, read:
 
 ## AI Rules
 
-- Use `codex-ai[openai]==0.2.5` as the only runtime AI provider.
-- Read the OpenAI key from `OPENAI_API_KEY` and the model from `OPENAI_MODEL`.
+- Use `codex-ai[openai,gemini]==0.2.5` as the only runtime AI integration library.
+- Read provider order from `AI_PROVIDER` and `AI_FALLBACK_PROVIDER`.
+- Read OpenAI settings from `OPENAI_API_KEY`/`OPENAI_MODEL` and Gemini settings from
+  `GEMINI_API_KEY`/`GEMINI_MODEL`.
+- Keep provider construction in the integration factory and fallback orchestration
+  outside domain services.
 - Build prompts in one place.
 - Keep generated posts concise and fact-preserving.
 - Handle rate limit, timeout, auth, invalid response, and empty response errors.

@@ -165,7 +165,7 @@ provider payload и секреты не сохраняются.
 - каждый action использует service/Celery port, а не self-HTTP;
 - повторный/конкурентный action не создаёт дубли;
 - `PipelineRun` восстанавливается после retry, revoke и worker failure;
-- health widgets не вызывают OpenAI и не отправляют Telegram message;
+- health widgets не вызывают AI provider-ы и не отправляют Telegram message;
 - Alembic проходит upgrade/check/downgrade/upgrade;
 - Ruff, Mypy, Pytest и responsive browser smoke проходят;
 - `.env`, password hash, session secret и session files не попадают в Git.
@@ -191,7 +191,7 @@ provider payload и секреты не сохраняются.
 - этап 1 завершён: shell, single-admin login, opaque signed cookie, Redis session,
   CSRF logout, login rate limit и security headers;
 - этап 2 завершён: read-only метрики, 7-дневные графики, последние посты/ошибки,
-  request-scoped SQL snapshot и passive/cached health без OpenAI/Telegram вызовов;
+  request-scoped SQL snapshot и passive/cached health без AI/Telegram вызовов;
 - этап 3 завершён: read-only списки и карточки Source, Keyword, NewsItem, Post и
   ErrorLog, server-side фильтры и пагинация;
 - этап 4 завершён: `PipelineRun`, `AdminAuditLog`, migration, lifecycle и

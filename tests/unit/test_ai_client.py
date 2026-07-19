@@ -4,6 +4,7 @@ from typing import Any
 
 import pytest
 from codex_ai import LLMProviderError, PromptResult
+from codex_ai.providers import gemini as gemini_provider_module
 from codex_ai.providers import openai as openai_provider_module
 
 from aibot.config import Settings
@@ -15,11 +16,18 @@ from aibot.integrations.ai_client import (
     AIClientTimeoutError,
 )
 
+VALID_POST = (
+    "🚀 Astra Studio помогает командам работать с несколькими ИИ-моделями "
+    "через единый интерфейс. Платформа поддерживает совместную работу, управление "
+    "диалогами и развёртывание в собственной инфраструктуре. "
+    "Изучите возможности проекта и оцените, подходит ли он вашей команде."
+)
+
 
 class FakeTextProvider:
     """Тестовый text provider с контрактом codex-ai."""
 
-    def __init__(self, *, content: str = "Generated post", exc: Exception | None = None) -> None:
+    def __init__(self, *, content: str = VALID_POST, exc: Exception | None = None) -> None:
         self.content = content
         self.exc = exc
         self.prompts: list[PromptResult] = []
@@ -65,13 +73,60 @@ async def test_ai_client_uses_codex_ai_prompt_contract() -> None:
 
     generated_text = await client.generate_telegram_post("  Python   release  ")
 
-    assert generated_text == "Generated post"
+    assert generated_text == VALID_POST
     assert len(provider.prompts) == 1
     prompt = provider.prompts[0]
     assert prompt.messages[0].role == "user"
     assert prompt.messages[0].content == "Python release"
     assert "Telegram-канала" in prompt.system
-    assert prompt.max_tokens == 450
+    assert prompt.max_tokens == 2048
+    assert "Markdown" in prompt.system
+
+
+@pytest.mark.asyncio
+async def test_ai_client_uses_gemini_fallback_after_primary_provider_error() -> None:
+    """Ошибка primary provider-а переключает генерацию на Gemini fallback."""
+
+    primary_provider = FakeTextProvider(
+        exc=provider_error(RateLimitError("primary quota exhausted"))
+    )
+    fallback_provider = FakeTextProvider(content=VALID_POST)
+    client = AIClient(
+        Settings(
+            openai_api_key="openai-test-key",
+            gemini_api_key="gemini-test-key",
+        ),
+        provider=primary_provider,
+        fallback_provider=fallback_provider,
+    )
+
+    generated_text = await client.generate_telegram_post("Python release")
+
+    assert generated_text == VALID_POST
+    assert len(primary_provider.prompts) == 1
+    assert len(fallback_provider.prompts) == 1
+
+
+@pytest.mark.asyncio
+async def test_ai_client_does_not_call_gemini_after_primary_success() -> None:
+    """Успешный primary provider не создаёт лишний Gemini-запрос."""
+
+    primary_provider = FakeTextProvider(content=VALID_POST)
+    fallback_provider = FakeTextProvider(content="Must not be used")
+    client = AIClient(
+        Settings(
+            openai_api_key="openai-test-key",
+            gemini_api_key="gemini-test-key",
+        ),
+        provider=primary_provider,
+        fallback_provider=fallback_provider,
+    )
+
+    generated_text = await client.generate_telegram_post("Python release")
+
+    assert generated_text == VALID_POST
+    assert len(primary_provider.prompts) == 1
+    assert fallback_provider.prompts == []
 
 
 @pytest.mark.asyncio
@@ -113,12 +168,56 @@ async def test_ai_client_configures_terra_provider_without_sdk_retries(
 
 
 @pytest.mark.asyncio
+async def test_ai_client_builds_openai_to_gemini_runtime_chain(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Runtime factory создаёт Gemini с отдельным ключом и моделью после OpenAI."""
+
+    captured_openai: dict[str, Any] = {}
+    captured_gemini: dict[str, Any] = {}
+
+    class FailingOpenAIProvider(FakeTextProvider):
+        def __init__(self, **kwargs: Any) -> None:
+            super().__init__(exc=provider_error(RateLimitError("quota exhausted")))
+            captured_openai.update(kwargs)
+
+    class CapturingGeminiProvider(FakeTextProvider):
+        def __init__(self, **kwargs: Any) -> None:
+            super().__init__(content=VALID_POST)
+            captured_gemini.update(kwargs)
+
+    monkeypatch.setattr(openai_provider_module, "OpenAIProvider", FailingOpenAIProvider)
+    monkeypatch.setattr(gemini_provider_module, "GeminiProvider", CapturingGeminiProvider)
+
+    client = AIClient(
+        Settings(
+            ai_provider="openai",
+            ai_fallback_provider="gemini",
+            openai_api_key="openai-test-key",
+            openai_model="gpt-5.6-terra",
+            gemini_api_key="gemini-test-key",
+            gemini_model="gemini-3.5-flash",
+        )
+    )
+
+    generated_text = await client.generate_telegram_post("Python release")
+
+    assert generated_text == VALID_POST
+    assert captured_openai["api_key"] == "openai-test-key"
+    assert captured_openai["model"] == "gpt-5.6-terra"
+    assert captured_gemini == {
+        "api_key": "gemini-test-key",
+        "model": "gemini-3.5-flash",
+    }
+
+
+@pytest.mark.asyncio
 async def test_ai_client_requires_openai_key_without_fake_fallback() -> None:
-    """Отсутствующий OPENAI_API_KEY не включает скрытый fake-режим."""
+    """Отсутствующие AI credentials не включают скрытый fake-режим."""
 
-    client = AIClient(Settings(openai_api_key=None))
+    client = AIClient(Settings(openai_api_key=None, gemini_api_key=None))
 
-    with pytest.raises(AIClientAuthenticationError, match="OPENAI_API_KEY"):
+    with pytest.raises(AIClientAuthenticationError, match="AI provider credentials"):
         await client.generate_telegram_post("Python release")
 
 
@@ -158,4 +257,19 @@ async def test_ai_client_rejects_empty_response() -> None:
     )
 
     with pytest.raises(AIClientInvalidResponseError):
+        await client.generate_telegram_post("Python release")
+
+
+@pytest.mark.asyncio
+async def test_ai_client_rejects_truncated_markdown_response() -> None:
+    """Оборванный Gemini-ответ не может попасть в Post и Telegram."""
+
+    client = AIClient(
+        Settings(openai_api_key="test-key"),
+        provider=FakeTextProvider(
+            content="🚀 **Astra Studio: мощная open-source платформа для работы с ИИ без"
+        ),
+    )
+
+    with pytest.raises(AIClientInvalidResponseError, match="incomplete"):
         await client.generate_telegram_post("Python release")

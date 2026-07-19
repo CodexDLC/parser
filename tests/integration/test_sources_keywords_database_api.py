@@ -255,7 +255,7 @@ async def test_automatic_pipeline_runs_all_stages_against_database(
             ),
             post_generation_service=PostGenerationService(
                 session,
-                ai_client=FakeAIClient(),  # type: ignore[arg-type]
+                ai_client=FakeAIClient(),
             ),
             publishing_service=PublishingService(
                 session,
@@ -316,7 +316,7 @@ async def test_postgresql_row_lock_blocks_concurrent_generation(
         async with AsyncSessionFactory() as second_session:
             service = PostGenerationService(
                 second_session,
-                ai_client=ai_client,  # type: ignore[arg-type]
+                ai_client=ai_client,
             )
             with pytest.raises(ConcurrentGenerationError):
                 await service.generate_post_from_news(ready_news[0].id)
@@ -355,7 +355,7 @@ async def test_ai_error_log_is_persisted_without_secret(
         with pytest.raises(AIClientTimeoutError, match="super-secret"):
             await PostGenerationService(
                 session,
-                ai_client=FailingAIClient(),  # type: ignore[arg-type]
+                ai_client=FailingAIClient(),
             ).generate_post_from_news(ready_news[0].id)
 
         error_logs = await ErrorLogRepository(session).list_by_scope(ErrorScope.AI)

@@ -20,7 +20,7 @@
     invalidation, headers и реальный Redis round-trip.
 12. Dashboard metrics сверяются с реальной PostgreSQL, а весь overview ограничен
     пятью SQL-запросами без N+1.
-13. Passive health использует только cached Redis PING и не вызывает OpenAI,
+13. Passive health использует только cached Redis PING и не вызывает AI provider-ы,
     Telegram или Celery worker.
 14. Read-only entity pages проверяют фильтры, server-side pagination, 404 и
     HTML escaping.
@@ -38,6 +38,10 @@
 20. Container acceptance собирает один production image, выполняет Alembic отдельным
     one-shot сервисом и проверяет healthy API/Worker, singleton Beat, non-root runtime
     и отсутствие `.env` внутри image filesystem.
+21. AI response contract использует достаточный output-token budget и отклоняет
+    короткий, оборванный либо размеченный ответ до создания и публикации `Post`.
+22. Финальный Post детерминированно получает сохранённый HTTP(S)-адрес NewsItem,
+    а отсутствующая или небезопасная схема не попадает в Telegram preview.
 
 ## Запуск
 
