@@ -14,6 +14,7 @@ from aibot.models.post import Post
 from aibot.repositories.error_log_repository import ErrorLogRepository
 from aibot.repositories.post_repository import PostRepository
 from aibot.services.exceptions import (
+    ConcurrentPublicationError,
     EntityNotFoundError,
     InvalidPostStateError,
     PublishingFailedError,
@@ -51,7 +52,13 @@ class PublishingService:
     async def publish_post(self, post_id: uuid.UUID) -> PublishResult:
         """Опубликовать пост или выполнить dry-run публикацию."""
 
-        post = await self.get_publishable_post(post_id)
+        post = await self.repository.get_for_publication(post_id)
+        if post is None:
+            existing = await self.repository.get(post_id)
+            if existing is None:
+                raise EntityNotFoundError("Post not found")
+            raise ConcurrentPublicationError("Post publication is already running")
+        self._ensure_publishable(post)
 
         post.status = PostStatus.PUBLISHING
         await self.session.flush()

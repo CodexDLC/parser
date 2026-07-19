@@ -1,5 +1,7 @@
 """Repository для чтения и изменения источников новостей."""
 
+import uuid
+
 from sqlalchemy import select
 
 from aibot.models.enums import SourceType
@@ -17,6 +19,13 @@ class SourceRepository(BaseRepository[Source]):
 
         statement = select(Source).where(Source.type == source_type, Source.url == url)
         return await self.session.scalar(statement)
+
+    async def get_for_update(self, source_id: uuid.UUID) -> Source | None:
+        """Заблокировать Source для optimistic version check кабинета."""
+
+        return await self.session.scalar(
+            select(Source).where(Source.id == source_id).with_for_update()
+        )
 
     async def list_enabled(self) -> list[Source]:
         """Вернуть все включенные источники."""

@@ -11,6 +11,7 @@ from celery import Task
 
 from aibot.db.session import AsyncSessionFactory
 from aibot.services.celery_failure_logging import CeleryFailureLoggingService
+from aibot.services.pipeline_run_tracking import PipelineRunTaskLifecycle
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,29 @@ class LoggedTask(Task):
 
     abstract = True
 
+    def before_start(
+        self,
+        task_id: str,
+        args: Sequence[Any],
+        kwargs: Mapping[str, Any],
+    ) -> None:
+        """Пометить связанный PipelineRun running перед task body."""
+
+        self._run_pipeline_hook("running", kwargs=kwargs)
+        super().before_start(task_id, args, kwargs)
+
+    def on_success(
+        self,
+        retval: Any,
+        task_id: str,
+        args: Sequence[Any],
+        kwargs: Mapping[str, Any],
+    ) -> None:
+        """Сохранить безопасные integer result counts."""
+
+        self._run_pipeline_hook("succeeded", kwargs=kwargs, result=retval)
+        super().on_success(retval, task_id, args, kwargs)
+
     def on_failure(
         self,
         exc: BaseException,
@@ -45,7 +69,31 @@ class LoggedTask(Task):
             asyncio.run(self._record_failure(task_name, exc, context))
         except Exception:
             logger.exception("Could not persist Celery task failure")
+        self._run_pipeline_hook("failed", kwargs=kwargs, error=exc)
         super().on_failure(exc, task_id, args, kwargs, einfo)
+
+    def _run_pipeline_hook(
+        self,
+        transition: str,
+        *,
+        kwargs: Mapping[str, Any],
+        result: object = None,
+        error: BaseException | None = None,
+    ) -> None:
+        raw_run_id = kwargs.get("pipeline_run_id")
+        if raw_run_id is None:
+            return
+        try:
+            run_id = uuid.UUID(str(raw_run_id))
+            lifecycle = PipelineRunTaskLifecycle(AsyncSessionFactory)
+            if transition == "running":
+                asyncio.run(lifecycle.mark_running(run_id))
+            elif transition == "succeeded":
+                asyncio.run(lifecycle.mark_succeeded(run_id, result))
+            elif transition == "failed" and error is not None:
+                asyncio.run(lifecycle.mark_failed(run_id, error))
+        except Exception:
+            logger.exception("Could not update PipelineRun lifecycle")
 
     async def _record_failure(
         self,

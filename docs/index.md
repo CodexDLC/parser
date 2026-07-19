@@ -25,6 +25,8 @@ Project M4 - backend-сервис для автоматизации новост
 - [development-plan.md](development-plan.md) - порядок разработки по этапам.
 - [runtime-and-dependencies.md](runtime-and-dependencies.md) - версия Python и зависимости проекта.
 - [acceptance-tests.md](acceptance-tests.md) - обязательный набор проверок базовой сборки.
+- [cabinet-plan.md](cabinet-plan.md) - контракт и stage-gated план административного
+  кабинета.
 - [checklist.md](checklist.md) - чеклист готовности проекта к сдаче.
 
 ## Project Agent Skills

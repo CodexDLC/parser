@@ -10,9 +10,13 @@ from aibot.tasks.celery_app import celery_app
 
 
 @celery_app.task(base=LoggedTask, name="aibot.tasks.publishing.publish_post")
-def publish_post(post_id: str) -> dict[str, object]:
+def publish_post(
+    post_id: str,
+    pipeline_run_id: str | None = None,
+) -> dict[str, object]:
     """Запустить dry-run или реальную публикацию поста."""
 
+    del pipeline_run_id
     return asyncio.run(_publish_post(uuid.UUID(post_id)))
 
 

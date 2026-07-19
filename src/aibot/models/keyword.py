@@ -4,10 +4,10 @@ from sqlalchemy import Boolean, Index, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from aibot.db.base import Base
-from aibot.models.mixins import CreatedAtMixin, UUIDPrimaryKeyMixin
+from aibot.models.mixins import TimestampMixin, UUIDPrimaryKeyMixin
 
 
-class Keyword(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
+class Keyword(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     """Ключевое слово для фильтрации новостей."""
 
     __tablename__ = "keywords"

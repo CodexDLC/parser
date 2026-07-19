@@ -36,6 +36,26 @@
 - [x] Проверен цикл `upgrade → check → downgrade → upgrade` на чистой PostgreSQL-БД.
 - [x] Production bootstrap переведён с `create_all` на `alembic upgrade head`.
 
+## Административный кабинет
+
+- [x] Зафиксирован contract/threat model кабинета.
+- [x] Подключён `codex-fastapi-cabinet==0.1.0` без local override.
+- [x] Добавлен feature flag и production-политика Swagger.
+- [x] Реализован single-admin login с Argon2 password hash.
+- [x] Реализованы signed opaque cookie и Redis-backed session.
+- [x] Реализованы CSRF logout, login rate limit и security headers.
+- [x] Кабинет полностью отсутствует при `CABINET_ENABLED=false`.
+- [x] Read-only dashboard и passive health snapshot.
+- [x] Dashboard использует один request-scoped snapshot и не создаёт N+1.
+- [x] Passive health не вызывает OpenAI, Telegram и Celery worker.
+- [x] Read-only страницы доменных сущностей с фильтрами и пагинацией.
+- [x] `PipelineRun`, `AdminAuditLog`, Alembic migration и reconciliation.
+- [x] CRUD источников и ключевых слов с optimistic locking и аудитом.
+- [x] Celery actions, idempotency и polling запусков.
+- [x] Preview и подтверждаемая Telegram-публикация.
+- [x] PostgreSQL row lock исключает конкурентную двойную публикацию.
+- [x] Финальный кабинетный acceptance, документация, commit и push.
+
 ## API
 
 - [x] CRUD источников.

@@ -5,10 +5,12 @@ from typing import cast
 from sqlalchemy import Table, UniqueConstraint
 
 from aibot.db.base import Base
+from aibot.models.admin_audit_log import AdminAuditLog  # noqa: F401
 from aibot.models.enums import ErrorScope, NewsStatus, PostStatus, SourceType
 from aibot.models.error_log import ErrorLog
 from aibot.models.keyword import Keyword
 from aibot.models.news_item import NewsItem
+from aibot.models.pipeline_run import PipelineRun  # noqa: F401
 from aibot.models.post import Post
 from aibot.models.source import Source
 from aibot.repositories import (
@@ -29,6 +31,8 @@ def test_metadata_contains_project_tables() -> None:
         "news_items",
         "posts",
         "error_logs",
+        "pipeline_runs",
+        "admin_audit_logs",
     }
 
 

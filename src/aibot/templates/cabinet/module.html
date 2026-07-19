@@ -1,0 +1,27 @@
+{% extends "cabinet/base.html" %}
+{% block content %}
+<header class="fc-page-header">
+    <div>
+        <p class="fc-eyebrow">Project M4</p>
+        <h1>{{ module.label }}</h1>
+    </div>
+</header>
+{% if widgets %}
+    <div class="fc-widget-grid">
+        {% for widget in widgets %}
+            {% include "cabinet/includes/widget_frame.html" %}
+        {% endfor %}
+    </div>
+{% else %}
+    {% if module_context and module_context.get("primary_url") %}
+        <section class="fc-card">
+            <p>Откройте список записей раздела.</p>
+            <a class="fc-button is-primary" href="{{ module_context.get('primary_url') }}">
+                Перейти к списку
+            </a>
+        </section>
+    {% else %}
+        <div class="fc-empty">Для этого раздела пока нет данных.</div>
+    {% endif %}
+{% endif %}
+{% endblock %}

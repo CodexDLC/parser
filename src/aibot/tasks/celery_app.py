@@ -16,6 +16,7 @@ celery_app = Celery(
         "aibot.tasks.generation",
         "aibot.tasks.publishing",
         "aibot.tasks.pipeline",
+        "aibot.tasks.maintenance",
     ],
 )
 
@@ -43,6 +44,10 @@ celery_app.conf.update(
                 "generation_limit": settings.pipeline_generation_limit,
                 "publishing_limit": settings.pipeline_publishing_limit,
             },
-        }
+        },
+        "reconcile-pipeline-runs": {
+            "task": "aibot.tasks.maintenance.reconcile_pipeline_runs",
+            "schedule": settings.pipeline_reconciliation_interval_seconds,
+        },
     },
 )

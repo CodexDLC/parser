@@ -43,3 +43,12 @@ class PostRepository(BaseRepository[Post]):
             Post.status == PostStatus.PUBLISHED,
         )
         return await self.session.scalar(statement)
+
+    async def get_for_publication(self, post_id: uuid.UUID) -> Post | None:
+        """Получить Post с row lock или None, если lock уже занят."""
+
+        return await self.session.scalar(
+            select(Post)
+            .where(Post.id == post_id)
+            .with_for_update(skip_locked=True)
+        )

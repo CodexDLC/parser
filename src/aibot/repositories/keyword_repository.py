@@ -1,5 +1,7 @@
 """Repository для чтения и изменения ключевых слов."""
 
+import uuid
+
 from sqlalchemy import func, select
 
 from aibot.models.keyword import Keyword
@@ -16,6 +18,13 @@ class KeywordRepository(BaseRepository[Keyword]):
 
         statement = select(Keyword).where(func.lower(Keyword.word) == word.lower())
         return await self.session.scalar(statement)
+
+    async def get_for_update(self, keyword_id: uuid.UUID) -> Keyword | None:
+        """Заблокировать Keyword для optimistic version check кабинета."""
+
+        return await self.session.scalar(
+            select(Keyword).where(Keyword.id == keyword_id).with_for_update()
+        )
 
     async def list_enabled(self) -> list[Keyword]:
         """Вернуть все включенные ключевые слова."""

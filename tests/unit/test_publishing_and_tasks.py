@@ -10,11 +10,16 @@ from aibot.integrations.telegram_client import TelegramClient
 from aibot.models.enums import ErrorScope, PostStatus
 from aibot.models.error_log import ErrorLog
 from aibot.models.post import Post
-from aibot.services.exceptions import InvalidPostStateError, PublishingFailedError
+from aibot.services.exceptions import (
+    ConcurrentPublicationError,
+    InvalidPostStateError,
+    PublishingFailedError,
+)
 from aibot.services.publishing import PublishingService
 from aibot.tasks.celery_app import celery_app
 from aibot.tasks.filtering import filter_news
 from aibot.tasks.generation import generate_post, generate_text
+from aibot.tasks.maintenance import reconcile_pipeline_runs
 from aibot.tasks.parsing import parse_enabled_sources, parse_source
 from aibot.tasks.pipeline import run_pipeline
 from aibot.tasks.publishing import publish_post
@@ -23,11 +28,15 @@ from aibot.tasks.publishing import publish_post
 class FakePostRepository:
     """Fake post repository for publishing service tests."""
 
-    def __init__(self, post: Post | None) -> None:
+    def __init__(self, post: Post | None, *, locked: bool = False) -> None:
         self.post = post
+        self.locked = locked
 
     async def get(self, _: uuid.UUID) -> Post | None:
         return self.post
+
+    async def get_for_publication(self, _: uuid.UUID) -> Post | None:
+        return None if self.locked else self.post
 
 
 class FakeErrorLogRepository:
@@ -121,6 +130,24 @@ async def test_publishing_service_rejects_already_published_post() -> None:
 
 
 @pytest.mark.asyncio
+async def test_publishing_service_rejects_concurrent_row_lock_before_telegram() -> None:
+    """Занятый Post row не приводит ко второму Telegram-вызову."""
+
+    post = make_post()
+    repository = FakePostRepository(post, locked=True)
+    service = PublishingService(
+        FakeSession(),  # type: ignore[arg-type]
+        settings=Settings(telegram_dry_run=True),
+        repository=repository,  # type: ignore[arg-type]
+    )
+
+    with pytest.raises(ConcurrentPublicationError, match="publication"):
+        await service.publish_post(post.id)
+
+    assert post.status == PostStatus.GENERATED
+
+
+@pytest.mark.asyncio
 async def test_publishing_service_logs_telegram_errors() -> None:
     """PublishingService помечает пост failed и пишет ErrorLog при сбое Telegram."""
 
@@ -159,6 +186,7 @@ def test_celery_app_registers_project_tasks() -> None:
     assert generate_post.name in celery_app.tasks
     assert publish_post.name in celery_app.tasks
     assert run_pipeline.name in celery_app.tasks
+    assert reconcile_pipeline_runs.name in celery_app.tasks
 
 
 def test_celery_retry_settings_are_configured() -> None:
@@ -176,7 +204,10 @@ def test_beat_schedules_full_pipeline_with_runtime_limits() -> None:
 
     schedule = celery_app.conf.beat_schedule
 
-    assert set(schedule) == {"run-full-pipeline-every-30-minutes"}
+    assert set(schedule) == {
+        "run-full-pipeline-every-30-minutes",
+        "reconcile-pipeline-runs",
+    }
     entry = schedule["run-full-pipeline-every-30-minutes"]
     assert entry["task"] == run_pipeline.name
     assert entry["schedule"] == 30 * 60
@@ -186,6 +217,9 @@ def test_beat_schedules_full_pipeline_with_runtime_limits() -> None:
         "publishing_limit": 10,
     }
     assert entry["task"] != parse_enabled_sources.name
+    reconciliation = schedule["reconcile-pipeline-runs"]
+    assert reconciliation["task"] == reconcile_pipeline_runs.name
+    assert reconciliation["schedule"] == 10 * 60
 
 
 def test_generation_task_contract_uses_injected_ai(

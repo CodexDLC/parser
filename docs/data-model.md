@@ -135,3 +135,30 @@ Post 1--N ErrorLog
 ```
 
 В MVP можно упростить `NewsItem 1--N Post` до `NewsItem 1--1 Post`, но в модели лучше оставить возможность регенерации поста.
+
+## PipelineRun
+
+Persisted lifecycle фоновой операции кабинета или Beat:
+
+- `initiator`: `beat`, `cabinet` или `api`;
+- `operation`: `parse_source`, `generate_news`, `publish_post`, `run_pipeline`;
+- `status`: `queued`, `running`, `succeeded`, `failed`, `revoked`, `stale`;
+- optional entity UUID и Celery `task_id`;
+- уникальный `idempotency_key`;
+- безопасные параметры, integer result counts и категория ошибки;
+- timestamps запуска, heartbeat и завершения.
+
+Queued/running записи периодически reconcилируются и становятся `stale`, если worker
+не обновил lifecycle за настроенный интервал.
+
+## AdminAuditLog
+
+Append-only журнал административных мутаций:
+
+- безопасный actor identifier;
+- action и тип/UUID сущности;
+- outcome `succeeded`, `rejected` или `failed`;
+- только bounded категория результата, без form payload, cookies и секретов.
+
+`Keyword` дополнительно имеет `updated_at`, используемый вместе с row lock для
+защиты форм от lost update.

@@ -23,9 +23,14 @@ from aibot.tasks.celery_app import celery_app
     retry_jitter=True,
     max_retries=3,
 )
-def parse_source(source_id: str, limit: int = 10) -> dict[str, object]:
+def parse_source(
+    source_id: str,
+    limit: int = 10,
+    pipeline_run_id: str | None = None,
+) -> dict[str, object]:
     """Запустить ручной парсинг одного источника."""
 
+    del pipeline_run_id
     return asyncio.run(_parse_source(uuid.UUID(source_id), limit=limit))
 
 

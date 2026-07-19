@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Вход · {{ brand_name }}</title>
+    <link rel="stylesheet" href="{{ static_mount_path }}/css/cabinet.css">
+</head>
+<body>
+    <main class="fc-main">
+        <section class="fc-card">
+            <p class="fc-eyebrow">Project M4</p>
+            <h1>{{ brand_name }}</h1>
+            <p class="fc-muted">Войдите как оператор системы.</p>
+            {% if error %}<div class="fc-alert is-error" role="alert">{{ error }}</div>{% endif %}
+            <form class="fc-form" action="{{ mount_path }}/login" method="post">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="next_path" value="{{ next_path }}">
+                <label class="fc-field">
+                    Логин
+                    <input name="username" autocomplete="username" required>
+                </label>
+                <label class="fc-field">
+                    Пароль
+                    <input type="password" name="password" autocomplete="current-password" required>
+                </label>
+                <button class="fc-button is-primary" type="submit">Войти</button>
+            </form>
+        </section>
+    </main>
+</body>
+</html>

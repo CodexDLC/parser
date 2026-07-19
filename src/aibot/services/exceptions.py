@@ -25,5 +25,9 @@ class ConcurrentGenerationError(Exception):
     """Другой worker уже генерирует пост для этой новости."""
 
 
+class ConcurrentPublicationError(Exception):
+    """Другой worker уже публикует этот пост."""
+
+
 class PublishingFailedError(Exception):
     """Публикация поста завершилась ошибкой внешнего сервиса."""

@@ -37,9 +37,13 @@ def generate_text(text: str) -> dict[str, object]:
     retry_jitter=True,
     max_retries=3,
 )
-def generate_post(news_id: str) -> dict[str, object]:
+def generate_post(
+    news_id: str,
+    pipeline_run_id: str | None = None,
+) -> dict[str, object]:
     """Сгенерировать и сохранить Post для новости."""
 
+    del pipeline_run_id
     return asyncio.run(_generate_post(uuid.UUID(news_id)))
 
 

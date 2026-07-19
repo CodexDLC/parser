@@ -32,6 +32,22 @@ requires-python = ">=3.12,<3.13"
 - `pydantic` - валидация данных.
 - `pydantic-settings` - настройки из переменных окружения.
 - `python-dotenv` - чтение локального `.env`.
+- `codex-fastapi-cabinet==0.1.0` - server-rendered shell, страницы и dashboard
+  widgets административного кабинета.
+- `pwdlib[argon2]` - Argon2 password hash единственного администратора.
+- `itsdangerous` - подпись opaque session и login CSRF cookies.
+- `python-multipart` - form runtime для следующих CRUD-этапов кабинета.
+
+Read-only dashboard работает через SQLAlchemy repository напрямую, без HTTP к
+собственному API. Метрики и таблицы загружаются одним request-scoped snapshot:
+один агрегирующий запрос, две группировки и две ограниченные последние выборки.
+Passive health выполняет только cached Redis PING; OpenAI, Telegram и Celery
+worker на открытии кабинета не вызываются.
+
+Operational кабинет хранит `PipelineRun` и `AdminAuditLog` в PostgreSQL. Celery hooks
+обновляют lifecycle, Beat запускает stale reconciliation, а status polling читает
+только безопасную persisted read-model. Формы Source/Keyword используют общий CSRF
+boundary и PostgreSQL row lock; публикация удерживает Post lock до ответа Telegram.
 
 ### PostgreSQL And ORM
 

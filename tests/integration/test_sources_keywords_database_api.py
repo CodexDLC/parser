@@ -1,6 +1,7 @@
 """Интеграционные тесты CRUD API через реальную PostgreSQL-БД."""
 
 from collections.abc import AsyncIterator, Callable
+from datetime import UTC, datetime
 from typing import NoReturn
 
 import pytest
@@ -14,6 +15,8 @@ from aibot.db.session import AsyncSessionFactory, engine
 from aibot.integrations.ai_client import AIClientTimeoutError
 from aibot.main import app
 from aibot.models.enums import ErrorScope, NewsStatus, PostStatus, SourceType
+from aibot.models.news_item import NewsItem
+from aibot.models.post import Post
 from aibot.models.source import Source
 from aibot.parsers.base import ParsedNewsItem
 from aibot.parsers.rss import RssFeedParseError
@@ -22,7 +25,10 @@ from aibot.repositories.error_log_repository import ErrorLogRepository
 from aibot.repositories.news_repository import NewsRepository
 from aibot.repositories.post_repository import PostRepository
 from aibot.repositories.source_repository import SourceRepository
-from aibot.services.exceptions import ConcurrentGenerationError
+from aibot.services.exceptions import (
+    ConcurrentGenerationError,
+    ConcurrentPublicationError,
+)
 from aibot.services.keyword_service import KeywordService
 from aibot.services.news_ingestion import NewsIngestionService
 from aibot.services.pipeline import PipelineService
@@ -391,3 +397,60 @@ async def test_parser_error_is_persisted_with_source_id(prepared_database: None)
     assert error_logs[0].details == (
         "Source is not a valid RSS/Atom feed: https://news.example/feed.xml"
     )
+
+
+@pytest.mark.asyncio
+async def test_postgresql_row_lock_blocks_concurrent_publication(
+    prepared_database: None,
+) -> None:
+    """Вторая session не вызывает Telegram для уже заблокированного Post."""
+
+    assert prepared_database is None
+    async with AsyncSessionFactory() as setup_session:
+        source = await SourceService(setup_session).create_source(
+            source_type=SourceType.SITE,
+            name="Publication lock",
+            url="https://example.test/publication-lock",
+            enabled=True,
+        )
+        news = await NewsRepository(setup_session).add(
+            NewsItem(
+                title="Publication lock news",
+                summary="Summary",
+                source_id=source.id,
+                published_at=datetime.now(UTC),
+                content_hash="publication-lock-news",
+                status=NewsStatus.GENERATED,
+            )
+        )
+        await setup_session.flush()
+        post = await PostRepository(setup_session).add(
+            Post(
+                news_id=news.id,
+                generated_text="Publication lock post",
+                status=PostStatus.GENERATED,
+            )
+        )
+        await setup_session.commit()
+        post_id = post.id
+
+    async with AsyncSessionFactory() as first_session:
+        locked = await PostRepository(first_session).get_for_publication(post_id)
+        assert locked is not None
+
+        class FailingIfCalledTelegramClient:
+            async def publish_message(self, text: str) -> str:
+                raise AssertionError(f"Telegram must not be called: {text}")
+
+        async with AsyncSessionFactory() as second_session:
+            service = PublishingService(
+                second_session,
+                settings=Settings(telegram_dry_run=False),
+                telegram_client=FailingIfCalledTelegramClient(),  # type: ignore[arg-type]
+            )
+            with pytest.raises(ConcurrentPublicationError):
+                await service.publish_post(post_id)
+
+        await first_session.rollback()
+
+    await engine.dispose()

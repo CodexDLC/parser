@@ -5,6 +5,27 @@
 Документация проекта находится в [docs/index.md](docs/index.md).
 Репозиторий: <https://github.com/CodexDLC/parser>.
 
+Stage-gated план административного кабинета на
+`codex-fastapi-cabinet==0.1.0` описан в
+[docs/cabinet-plan.md](docs/cabinet-plan.md). Кабинет остаётся выключенным по
+умолчанию через `CABINET_ENABLED=false`; после включения доступны single-admin
+shell, dashboard, страницы сущностей, Source/Keyword CRUD, мониторинг Celery и
+подтверждаемая Telegram-публикация. Passive health не делает платных внешних вызовов.
+
+Защищённая оболочка подключается только после создания single-admin credentials:
+
+```powershell
+uv run python -m aibot.cabinet.credentials --username admin
+```
+
+Команда интерактивно запрашивает пароль и выводит Argon2 hash и отдельный session
+secret. Полученные значения нужно вручную перенести в игнорируемые `.env` и
+`.env.prod`, затем установить `CABINET_ENABLED=true`. Plaintext password в файлы и
+Git не записывается. После запуска вход доступен по <http://127.0.0.1:8000/cabinet/login>.
+Календарные метрики используют IANA timezone из `CABINET_TIMEZONE`.
+Каждая тяжёлая операция кабинета создаёт persisted `PipelineRun`; повторная отправка
+той же формы не ставит вторую задачу. История мутаций доступна в разделе «Аудит».
+
 ## Runtime
 
 - Python: `3.12`
