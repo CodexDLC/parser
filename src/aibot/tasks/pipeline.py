@@ -5,7 +5,7 @@ import uuid
 
 from celery import current_task
 
-from aibot.db.session import AsyncSessionFactory
+from aibot.db.worker_session import WorkerSessionFactory
 from aibot.services.pipeline import PipelineService
 from aibot.services.pipeline_run_tracking import PipelineRunTaskLifecycle
 from aibot.tasks.base import LoggedTask
@@ -49,7 +49,7 @@ async def _run_beat_pipeline(
 ) -> dict[str, int]:
     """Создать persisted BEAT run и завершить его вместе с pipeline."""
 
-    lifecycle = PipelineRunTaskLifecycle(AsyncSessionFactory)
+    lifecycle = PipelineRunTaskLifecycle(WorkerSessionFactory)
     run_id = await lifecycle.create_beat_run(
         task_id=task_id,
         parameters={
@@ -79,7 +79,7 @@ async def _run_pipeline(
 ) -> dict[str, int]:
     """Async-реализация полного pipeline запуска."""
 
-    async with AsyncSessionFactory() as session:
+    async with WorkerSessionFactory() as session:
         result = await PipelineService(session).run_once(
             parse_limit=parse_limit,
             generation_limit=generation_limit,

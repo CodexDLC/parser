@@ -9,7 +9,7 @@ from typing import Any
 
 from celery import Task
 
-from aibot.db.session import AsyncSessionFactory
+from aibot.db.worker_session import WorkerSessionFactory
 from aibot.services.celery_failure_logging import CeleryFailureLoggingService
 from aibot.services.pipeline_run_tracking import PipelineRunTaskLifecycle
 
@@ -85,7 +85,7 @@ class LoggedTask(Task):
             return
         try:
             run_id = uuid.UUID(str(raw_run_id))
-            lifecycle = PipelineRunTaskLifecycle(AsyncSessionFactory)
+            lifecycle = PipelineRunTaskLifecycle(WorkerSessionFactory)
             if transition == "running":
                 asyncio.run(lifecycle.mark_running(run_id))
             elif transition == "succeeded":
@@ -103,7 +103,7 @@ class LoggedTask(Task):
     ) -> None:
         """Открыть отдельную session для failure hook."""
 
-        async with AsyncSessionFactory() as session:
+        async with WorkerSessionFactory() as session:
             await CeleryFailureLoggingService(session).record_failure(
                 task_name=task_name,
                 exc=exc,
@@ -122,20 +122,14 @@ class LoggedTask(Task):
         """Безопасно извлечь UUID связанной сущности по имени task."""
 
         if task_name == "aibot.tasks.parsing.parse_source":
-            return TaskFailureContext(
-                source_id=cls._uuid_argument(args, kwargs, "source_id")
-            )
+            return TaskFailureContext(source_id=cls._uuid_argument(args, kwargs, "source_id"))
         if task_name in {
             "aibot.tasks.filtering.filter_news",
             "aibot.tasks.generation.generate_post",
         }:
-            return TaskFailureContext(
-                news_id=cls._uuid_argument(args, kwargs, "news_id")
-            )
+            return TaskFailureContext(news_id=cls._uuid_argument(args, kwargs, "news_id"))
         if task_name == "aibot.tasks.publishing.publish_post":
-            return TaskFailureContext(
-                post_id=cls._uuid_argument(args, kwargs, "post_id")
-            )
+            return TaskFailureContext(post_id=cls._uuid_argument(args, kwargs, "post_id"))
         return TaskFailureContext()
 
     @staticmethod

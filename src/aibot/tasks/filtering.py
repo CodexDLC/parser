@@ -3,7 +3,7 @@
 import asyncio
 import uuid
 
-from aibot.db.session import AsyncSessionFactory
+from aibot.db.worker_session import WorkerSessionFactory
 from aibot.services.news_filtering import SavedNewsFilteringService
 from aibot.tasks.base import LoggedTask
 from aibot.tasks.celery_app import celery_app
@@ -19,7 +19,7 @@ def filter_news(news_id: str) -> dict[str, object]:
 async def _filter_news(news_id: uuid.UUID) -> dict[str, object]:
     """Async-реализация задачи фильтрации одной новости."""
 
-    async with AsyncSessionFactory() as session:
+    async with WorkerSessionFactory() as session:
         result = await SavedNewsFilteringService(session).filter_news(news_id)
         return {
             "news_id": str(result.news_id),

@@ -254,6 +254,11 @@ Beat не изменяют схему при старте. Worker и Beat зап
 Worker использует concurrency `1`, потому что является единственным владельцем
 SQLite session-файла Telethon.
 
+FastAPI использует обычный SQLAlchemy connection pool. Celery task adapters используют
+отдельный `WorkerSessionFactory` с `NullPool`: синхронные Celery hooks и task bodies
+запускают async-код через отдельные `asyncio.run()`, поэтому asyncpg-соединения нельзя
+переносить между event loop.
+
 PostgreSQL, Redis, Beat state и Telethon session используют независимые named
 volumes. Env-файлы и session никогда не входят в build context или image.
 Application containers работают от non-root пользователя с read-only root

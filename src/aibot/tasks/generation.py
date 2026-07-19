@@ -3,7 +3,7 @@
 import asyncio
 import uuid
 
-from aibot.db.session import AsyncSessionFactory
+from aibot.db.worker_session import WorkerSessionFactory
 from aibot.integrations.ai_client import (
     AIClientRateLimitError,
     AIClientTimeoutError,
@@ -50,7 +50,7 @@ def generate_post(
 async def _generate_text(text: str) -> dict[str, object]:
     """Async-реализация генерации текста."""
 
-    async with AsyncSessionFactory() as session:
+    async with WorkerSessionFactory() as session:
         service = PostGenerationService(session)
         generated_text = await service.generate_manual_post(text)
         return {"generated_text": generated_text}
@@ -59,7 +59,7 @@ async def _generate_text(text: str) -> dict[str, object]:
 async def _generate_post(news_id: uuid.UUID) -> dict[str, object]:
     """Async-реализация генерации Post из NewsItem."""
 
-    async with AsyncSessionFactory() as session:
+    async with WorkerSessionFactory() as session:
         service = PostGenerationService(session)
         post = await service.generate_post_from_news(news_id)
         return {

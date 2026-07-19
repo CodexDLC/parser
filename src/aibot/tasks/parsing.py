@@ -3,7 +3,7 @@
 import asyncio
 import uuid
 
-from aibot.db.session import AsyncSessionFactory
+from aibot.db.worker_session import WorkerSessionFactory
 from aibot.integrations.http_client import HttpTemporaryError
 from aibot.repositories.source_repository import SourceRepository
 from aibot.services.news_ingestion import NewsIngestionService
@@ -47,7 +47,7 @@ def parse_enabled_sources(limit: int = 10) -> list[dict[str, object]]:
 async def _parse_source(source_id: uuid.UUID, *, limit: int) -> dict[str, object]:
     """Async-реализация задачи парсинга одного источника."""
 
-    async with AsyncSessionFactory() as session:
+    async with WorkerSessionFactory() as session:
         result = await NewsIngestionService(session).parse_source(source_id, limit=limit)
         return {
             "source_id": str(result.source_id),
@@ -62,7 +62,7 @@ async def _parse_source(source_id: uuid.UUID, *, limit: int) -> dict[str, object
 async def _parse_enabled_sources(*, limit: int) -> list[dict[str, object]]:
     """Async-реализация задачи парсинга всех включенных источников."""
 
-    async with AsyncSessionFactory() as session:
+    async with WorkerSessionFactory() as session:
         source_repository = SourceRepository(session)
         batch_result = await SourceBatchParsingService(
             source_repository=source_repository,
@@ -78,16 +78,16 @@ def _serialize_batch_result(batch_result: SourceBatchParseResult) -> list[dict[s
     """Преобразовать batch result в безопасный JSON-контракт Celery."""
 
     successful: list[dict[str, object]] = [
-            {
-                "source_id": str(result.source_id),
-                "status": "success",
-                "parsed_count": result.parsed_count,
-                "saved_count": result.saved_count,
-                "duplicate_count": result.duplicate_count,
-                "filtered_out_count": result.filtered_out_count,
-                "ready_for_generation_count": result.ready_for_generation_count,
-            }
-            for result in batch_result.successful
+        {
+            "source_id": str(result.source_id),
+            "status": "success",
+            "parsed_count": result.parsed_count,
+            "saved_count": result.saved_count,
+            "duplicate_count": result.duplicate_count,
+            "filtered_out_count": result.filtered_out_count,
+            "ready_for_generation_count": result.ready_for_generation_count,
+        }
+        for result in batch_result.successful
     ]
     failed: list[dict[str, object]] = [
         {

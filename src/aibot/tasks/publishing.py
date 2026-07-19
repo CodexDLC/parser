@@ -3,7 +3,7 @@
 import asyncio
 import uuid
 
-from aibot.db.session import AsyncSessionFactory
+from aibot.db.worker_session import WorkerSessionFactory
 from aibot.services.publishing import PublishingService
 from aibot.tasks.base import LoggedTask
 from aibot.tasks.celery_app import celery_app
@@ -23,7 +23,7 @@ def publish_post(
 async def _publish_post(post_id: uuid.UUID) -> dict[str, object]:
     """Async-реализация задачи публикации поста."""
 
-    async with AsyncSessionFactory() as session:
+    async with WorkerSessionFactory() as session:
         result = await PublishingService(session).publish_post(post_id)
         return {
             "post_id": str(result.post_id),

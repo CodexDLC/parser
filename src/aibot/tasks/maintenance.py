@@ -3,7 +3,7 @@
 import asyncio
 
 from aibot.config import get_settings
-from aibot.db.session import AsyncSessionFactory
+from aibot.db.worker_session import WorkerSessionFactory
 from aibot.repositories.pipeline_run_repository import PipelineRunRepository
 from aibot.services.pipeline_reconciliation import PipelineReconciliationService
 from aibot.tasks.base import LoggedTask
@@ -21,10 +21,8 @@ def reconcile_pipeline_runs() -> dict[str, int]:
 
 
 async def _reconcile_pipeline_runs() -> dict[str, int]:
-    async with AsyncSessionFactory() as session:
-        count = await PipelineReconciliationService(
-            PipelineRunRepository(session)
-        ).reconcile(
+    async with WorkerSessionFactory() as session:
+        count = await PipelineReconciliationService(PipelineRunRepository(session)).reconcile(
             stale_after_seconds=get_settings().pipeline_run_stale_after_seconds
         )
     return {"stale_runs_count": count}
