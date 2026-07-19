@@ -1,0 +1,4 @@
+interface:
+  display_name: "M4 Integrations"
+  short_description: "External service rules for Project M4"
+  default_prompt: "Use this skill when changing Project M4 Telegram, parser, or AI integrations."

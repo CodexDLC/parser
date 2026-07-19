@@ -1,0 +1,4 @@
+interface:
+  display_name: "M4 Celery Pipeline"
+  short_description: "Async pipeline rules for Project M4"
+  default_prompt: "Use this skill when changing Project M4 Celery tasks or background workflows."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "M4 API"
+  short_description: "API design rules for Project M4"
+  default_prompt: "Use this skill when changing Project M4 FastAPI endpoints or schemas."

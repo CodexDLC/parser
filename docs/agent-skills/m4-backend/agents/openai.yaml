@@ -1,0 +1,4 @@
+interface:
+  display_name: "M4 Backend"
+  short_description: "Backend rules for Project M4"
+  default_prompt: "Use this skill when changing Project M4 backend code."

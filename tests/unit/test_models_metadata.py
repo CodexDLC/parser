@@ -1,0 +1,85 @@
+"""Тесты SQLAlchemy metadata первого прототипа."""
+
+from sqlalchemy import UniqueConstraint
+
+from aibot.db.base import Base
+from aibot.models.enums import ErrorScope, NewsStatus, PostStatus, SourceType
+from aibot.models.error_log import ErrorLog
+from aibot.models.keyword import Keyword
+from aibot.models.news_item import NewsItem
+from aibot.models.post import Post
+from aibot.models.source import Source
+from aibot.repositories import (
+    ErrorLogRepository,
+    KeywordRepository,
+    NewsRepository,
+    PostRepository,
+    SourceRepository,
+)
+
+
+def test_metadata_contains_project_tables() -> None:
+    """Metadata содержит все таблицы из модели данных."""
+
+    assert set(Base.metadata.tables) == {
+        "sources",
+        "keywords",
+        "news_items",
+        "posts",
+        "error_logs",
+    }
+
+
+def test_source_has_unique_type_url_constraint() -> None:
+    """Source защищен от дублей по паре type/url."""
+
+    constraints = {
+        constraint.name
+        for constraint in Source.__table__.constraints
+        if isinstance(constraint, UniqueConstraint)
+    }
+
+    assert "uq_sources_type_url" in constraints
+
+
+def test_keyword_has_lowercase_unique_index() -> None:
+    """Keyword имеет уникальный индекс без учета регистра."""
+
+    assert "uq_keywords_word_lower" in {index.name for index in Keyword.__table__.indexes}
+
+
+def test_post_has_partial_unique_published_index() -> None:
+    """Post ограничивает один опубликованный пост на одну новость."""
+
+    assert "uq_posts_one_published_per_news" in {index.name for index in Post.__table__.indexes}
+
+
+def test_enum_values_match_documented_contract() -> None:
+    """Enum-значения совпадают с документацией проекта."""
+
+    assert {item.value for item in SourceType} == {"site", "tg"}
+    assert {item.value for item in NewsStatus} == {
+        "new",
+        "filtered_out",
+        "ready_for_generation",
+        "generated",
+        "failed",
+    }
+    assert {item.value for item in PostStatus} == {
+        "new",
+        "generated",
+        "publishing",
+        "published",
+        "failed",
+    }
+    assert {item.value for item in ErrorScope} == {"parser", "ai", "telegram", "celery", "api"}
+
+
+def test_repositories_use_expected_models() -> None:
+    """Repository-классы привязаны к своим ORM-моделям."""
+
+    assert SourceRepository.model is Source
+    assert KeywordRepository.model is Keyword
+    assert NewsRepository.model is NewsItem
+    assert PostRepository.model is Post
+    assert ErrorLogRepository.model is ErrorLog
